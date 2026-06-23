@@ -86,12 +86,15 @@
   svg.spark { display:block; width:100%; height:120px; }
   .legend { display:flex; gap:12px; flex-wrap:wrap; font-size:11px; color:var(--muted); margin-top:6px; }
   .legdot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:4px; vertical-align:middle; }
+  .coll-tabs { display:flex; gap:6px; flex-wrap:wrap; margin:12px 0; }
+  .coll-tab { padding:6px 12px; border:1px solid var(--border); border-radius:20px; cursor:pointer; font-size:13px; color:var(--muted); }
+  .coll-tab.active { border-color:var(--accent); color:var(--accent); background:var(--type-bg); }
 </style>
 
 <div class="topbar">
   <div>
     <h1>Win/Loss + Inventory Tracker</h1>
-    <div class="sub">Collaborative multiplayer tracker — shared via Supabase, with charts and confidence-weighted stats.</div>
+    <div class="sub">Multiple typed collections, assigned to players by game type. Collaborative via Supabase, with charts and confidence-weighted stats.</div>
   </div>
   <div class="row" style="gap:6px;">
     <span class="item-meta" id="syncLabel" title="Sync status"><span class="syncdot" id="syncDot"></span>Offline</span>
@@ -101,7 +104,7 @@
 
 <div class="tabs">
   <div class="tab active" data-tab="browse">Browse</div>
-  <div class="tab" data-tab="collection">Collection</div>
+  <div class="tab" data-tab="collection">Collections</div>
   <div class="tab" data-tab="session">Session</div>
   <div class="tab" data-tab="stats">Stats</div>
   <div class="tab" data-tab="settings">Settings</div>
@@ -109,6 +112,14 @@
 
 <!-- BROWSE -->
 <div class="panel active" id="browse">
+  <div class="card">
+    <label class="lbl-inline"><strong>Add to collection:</strong></label>
+    <div class="row">
+      <select id="targetColl" style="flex:none;min-width:220px;" onchange="renderAll()"></select>
+      <span class="item-meta" id="targetCollMeta"></span>
+    </div>
+    <div class="hint">New additions below go into this collection. Type-A collections keep only one of each document; other types allow multiples.</div>
+  </div>
   <div class="card">
     <div class="row">
       <input id="searchInput" placeholder="Search documents from the API..." onkeydown="if(event.key==='Enter')doSearch()">
@@ -118,8 +129,8 @@
     <div class="results" id="searchResults"></div>
   </div>
   <div class="card">
-    <label class="lbl-inline"><strong>Bulk add</strong> — one name per line, single batched call. Duplicate lines ignored.</label>
-    <textarea id="bulkInput" placeholder="Sol Ring&#10;Lightning Bolt&#10;Counterspell" style="min-height:110px;width:100%;font-family:inherit;resize:vertical;"></textarea>
+    <label class="lbl-inline"><strong>Bulk add</strong> — one name per line. Prefix with a number for multiples (e.g. <code>4 Sol Ring</code>). Matches each (exact, then fuzzy); unmatched names are added as manual entries. (Type-A target keeps one of each.)</label>
+    <textarea id="bulkInput" placeholder="4 Sol Ring&#10;Lightning Bolt&#10;2x Counterspell" style="min-height:110px;width:100%;font-family:inherit;resize:vertical;"></textarea>
     <div class="row" style="margin-top:10px;">
       <button onclick="bulkImport()">Import All</button>
       <button class="ghost" onclick="document.getElementById('bulkInput').value=''">Clear</button>
@@ -137,15 +148,24 @@
   </div>
 </div>
 
-<!-- COLLECTION -->
+<!-- COLLECTIONS -->
 <div class="panel" id="collection">
   <div class="card">
-    <div class="row" style="justify-content: space-between;">
-      <strong>Saved Collection (<span id="collCount">0</span>)</strong>
-      <button class="danger small" onclick="clearCollection()">Clear All</button>
+    <strong>Create a Collection</strong>
+    <div class="row" style="margin-top:10px;">
+      <input id="newCollName" placeholder="Collection name (e.g. Mara's Aggro)" onkeydown="if(event.key==='Enter')createCollection()">
+      <select id="newCollType" style="flex:none;width:150px;"></select>
+      <button onclick="createCollection()">Create</button>
     </div>
-    <input id="collSearch" placeholder="Filter collection..." style="margin-top:12px;width:100%;" oninput="renderCollection()">
-    <div class="results" id="collectionList"></div>
+    <div class="hint">A collection's type controls where it can be used: at game setup, only collections whose type matches the game's type can be assigned.</div>
+  </div>
+
+  <div class="card">
+    <div class="row" style="justify-content:space-between;">
+      <strong>Collections</strong>
+    </div>
+    <div class="coll-tabs" id="collTabs"></div>
+    <div id="collDetail"></div>
   </div>
 </div>
 
@@ -158,9 +178,9 @@
   </div>
   <div class="card" id="setupCard">
     <strong>New Game</strong>
-    <div class="hint" style="margin-top:2px;">Pick players from your roster, or type a new name. Assign each one's documents, then start.</div>
+    <div class="hint" style="margin-top:2px;">Pick the game type, add players, and assign each a collection of that type. A player's default collection is pre-selected when it matches.</div>
     <label class="lbl-inline" style="margin-top:12px;">Game Type</label>
-    <select id="gameType" style="flex:none;width:100%;"></select>
+    <select id="gameType" style="flex:none;width:100%;" onchange="onGameTypeChange()"></select>
     <label class="lbl-inline" style="margin-top:12px;">Add player</label>
     <div class="row">
       <input id="newPlayer" placeholder="Type a new player name to create + add" onkeydown="if(event.key==='Enter')addPlayerByName()">
@@ -204,30 +224,18 @@
     </div>
     <div class="hint" id="dateScope"></div>
   </div>
+  <div class="card"><strong>Wins Over Time</strong><div id="chartWins" style="margin-top:10px;"></div></div>
   <div class="card">
-    <strong>Wins Over Time</strong>
-    <div id="chartWins" style="margin-top:10px;"></div>
-  </div>
-  <div class="card">
-    <div class="row" style="justify-content: space-between;">
-      <strong>Per-Type Summary</strong>
-      <button class="ghost small" onclick="exportCSV()">Export CSV</button>
-    </div>
+    <div class="row" style="justify-content: space-between;"><strong>Per-Type Summary</strong><button class="ghost small" onclick="exportCSV()">Export CSV</button></div>
     <div id="typeSummary" style="margin-top:10px;"></div>
     <div id="chartTypes" style="margin-top:12px;"></div>
   </div>
   <div class="card">
-    <div class="row" style="justify-content: space-between;">
-      <strong>Document Performance</strong>
-      <span class="item-meta">lift, confidence-weighted</span>
-    </div>
+    <div class="row" style="justify-content: space-between;"><strong>Document Performance</strong><span class="item-meta">lift, confidence-weighted</span></div>
     <div id="docStats" style="margin-top:10px;"></div>
   </div>
   <div class="card">
-    <div class="row" style="justify-content: space-between;">
-      <strong>Player Leaderboard</strong>
-      <span class="item-meta">sorted by win rate</span>
-    </div>
+    <div class="row" style="justify-content: space-between;"><strong>Player Leaderboard</strong><span class="item-meta">sorted by win rate</span></div>
     <label class="lbl-inline" style="margin-top:12px;">Filter by game type</label>
     <select id="lbFilter" style="flex:none;width:100%;" onchange="renderLeaderboard()"></select>
     <div id="leaderboard" style="margin-top:12px;"></div>
@@ -239,27 +247,18 @@
 <div class="panel" id="settings">
   <div class="card">
     <strong>Cloud Sync (Supabase)</strong>
-    <div class="hint" style="margin-top:2px;">Share one dataset across devices and people. Everyone who enters the same credentials + workspace code reads and writes the same data. Changes sync automatically. Conflict rule: last write wins.</div>
-    <label class="lbl-inline" style="margin-top:12px;">Supabase URL</label>
-    <input id="sbUrl" placeholder="https://xxxx.supabase.co">
-    <label class="lbl-inline" style="margin-top:10px;">Supabase anon key</label>
-    <input id="sbKey" placeholder="eyJ... (public anon key)">
-    <label class="lbl-inline" style="margin-top:10px;">Workspace code (shared secret your group agrees on)</label>
-    <input id="sbWorkspace" placeholder="e.g. friday-night-crew">
-    <div class="row" style="margin-top:12px;">
-      <button onclick="connectSync()">Connect &amp; Sync</button>
-      <button class="ghost" onclick="disconnectSync()">Disconnect</button>
-    </div>
+    <div class="hint" style="margin-top:2px;">Share one dataset across devices and people. Same credentials + workspace code = same data. Last write wins.</div>
+    <label class="lbl-inline" style="margin-top:12px;">Supabase URL</label><input id="sbUrl" placeholder="https://xxxx.supabase.co">
+    <label class="lbl-inline" style="margin-top:10px;">Supabase anon key</label><input id="sbKey" placeholder="eyJ... (public anon key)">
+    <label class="lbl-inline" style="margin-top:10px;">Workspace code</label><input id="sbWorkspace" placeholder="e.g. friday-night-crew">
+    <div class="row" style="margin-top:12px;"><button onclick="connectSync()">Connect &amp; Sync</button><button class="ghost" onclick="disconnectSync()">Disconnect</button></div>
     <div class="hint" id="syncStatus"></div>
     <div class="hint" id="sbSetup" style="margin-top:10px;"></div>
   </div>
   <div class="card">
     <strong>Player Roster</strong>
-    <div class="hint" style="margin-top:2px;">Each player has a permanent ID. Renaming changes only the display name. Players with game history can't be deleted.</div>
-    <div class="row" style="margin-top:12px;">
-      <input id="rosterNew" placeholder="New player name" onkeydown="if(event.key==='Enter')rosterAdd()">
-      <button onclick="rosterAdd()">Add</button>
-    </div>
+    <div class="hint" style="margin-top:2px;">Each player has a permanent ID and an optional default collection. Renaming changes only the display name.</div>
+    <div class="row" style="margin-top:12px;"><input id="rosterNew" placeholder="New player name" onkeydown="if(event.key==='Enter')rosterAdd()"><button onclick="rosterAdd()">Add</button></div>
     <div id="rosterList" style="margin-top:12px;"></div>
   </div>
   <div class="card">
@@ -270,21 +269,12 @@
   </div>
   <div class="card">
     <strong>Backup &amp; Restore</strong>
-    <div class="row" style="margin-top:12px;">
-      <button onclick="exportJSON()">Export Backup (JSON)</button>
-      <button class="ghost" onclick="document.getElementById('importFile').click()">Import Backup</button>
-      <input type="file" id="importFile" accept="application/json" style="display:none" onchange="importJSON(event)">
-    </div>
+    <div class="row" style="margin-top:12px;"><button onclick="exportJSON()">Export Backup (JSON)</button><button class="ghost" onclick="document.getElementById('importFile').click()">Import Backup</button><input type="file" id="importFile" accept="application/json" style="display:none" onchange="importJSON(event)"></div>
     <div class="hint" id="backupStatus"></div>
   </div>
 </div>
 
 <!-- modals -->
-<div id="docModal" class="modal-bg"><div class="modal">
-  <div class="row" style="justify-content:space-between;"><strong id="docModalTitle">Assign Documents</strong><button class="ghost small" onclick="closeDocModal()">Done</button></div>
-  <input id="docModalSearch" placeholder="Filter..." style="margin-top:12px;width:100%;" oninput="renderDocModal()">
-  <div class="chip-row" id="docModalChips" style="margin-top:12px;"></div>
-</div></div>
 <div id="editModal" class="modal-bg"><div class="modal">
   <div class="row" style="justify-content:space-between;"><strong>Edit Game</strong><button class="ghost small" onclick="closeEditModal()">Close</button></div>
   <div class="hint">Reorder the finishing positions (1st at top).</div>
@@ -295,58 +285,50 @@
 <script>
   // ============================================================
   //  STATE
+  //  collections: [{ id, name, type, docs:[{id,name,img,meta}] }]   (docs may repeat in non-A types)
+  //  players:     [{ id, name, defaultCollId }]
+  //  games:       [{ id, type, ts, standings:[pid], playerColl:{pid:collId}, playerDocs:{pid:[docName]} }]
   // ============================================================
-  let collection = [];
-  let players = [];      // {id, name}
-  let games = [];        // {id, type, ts, standings:[pid], playerDocs:{pid:[docNames]}}
+  let collections = [];
+  let players = [];
+  let games = [];
   let typeLabels = { A: 'Game Type A', B: 'Game Type B', C: 'Game Type C', D: 'Game Type D' };
   let theme = 'dark';
+  let activeCollId = null;     // which collection is shown on the Collections tab
 
-  let lobby = [];
+  let lobby = [];             // [{ pid, collId }]
   let active = null;
-  let modalPlayerIdx = null, editingGameId = null, editOrder = [];
+  let editingGameId = null, editOrder = [];
 
   const STORAGE_KEY = 'tracker-data';
   const ACTIVE_KEY = 'tracker-active';
   const SYNC_KEY = 'tracker-sync-cfg';
   const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
   const pid = () => 'p_' + uid();
+  const cid = () => 'c_' + uid();
 
-  // ---------- Sync config / runtime ----------
   let sync = { url: '', key: '', workspace: '', connected: false };
   let syncTimer = null, pollTimer = null, pushing = false, lastPushedHash = '', suppressPush = false;
-
   function loadSyncCfg() { try { const c = JSON.parse(localStorage.getItem(SYNC_KEY)); if (c) sync = { ...sync, ...c, connected: false }; } catch (e) {} }
   function saveSyncCfg() { try { localStorage.setItem(SYNC_KEY, JSON.stringify({ url: sync.url, key: sync.key, workspace: sync.workspace })); } catch (e) {} }
 
-  // ============================================================
-  //  PERSISTENCE
-  // ============================================================
-  function snapshot() { return { collection, players, games, typeLabels, theme }; }
-  function save() {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot())); } catch (e) { console.error(e); }
-    if (sync.connected && !suppressPush) schedulePush();
-  }
+  function snapshot() { return { collections, players, games, typeLabels, theme }; }
+  function save() { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot())); } catch (e) {} if (sync.connected && !suppressPush) schedulePush(); }
   function saveActive() { try { if (active) localStorage.setItem(ACTIVE_KEY, JSON.stringify(active)); else localStorage.removeItem(ACTIVE_KEY); } catch (e) {} }
 
   const playerById = id => players.find(p => p.id === id);
   const nameOf = id => { const p = playerById(id); return p ? p.name : '(unknown)'; };
-  function ensurePlayerByName(name) { const e = players.find(p => p.name.toLowerCase() === name.toLowerCase()); if (e) return e.id; const np = { id: pid(), name }; players.push(np); return np.id; }
+  const collById = id => collections.find(c => c.id === id);
+  const collName = id => { const c = collById(id); return c ? c.name : '(none)'; };
+  function ensurePlayerByName(name) { const e = players.find(p => p.name.toLowerCase() === name.toLowerCase()); if (e) return e.id; const np = { id: pid(), name, defaultCollId: '' }; players.push(np); return np.id; }
 
   function load() {
     loadSyncCfg();
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const d = JSON.parse(raw);
-        applyState(d, false);
-      }
-    } catch (e) {}
+    try { const raw = localStorage.getItem(STORAGE_KEY); if (raw) applyState(JSON.parse(raw), false); } catch (e) {}
+    if (!collections.length) collections = [{ id: cid(), name: 'Main', type: 'A', docs: [] }];
+    activeCollId = collections[0].id;
     applyTheme();
-    // reflect saved sync creds into the form
-    document.getElementById('sbUrl').value = sync.url || '';
-    document.getElementById('sbKey').value = sync.key || '';
-    document.getElementById('sbWorkspace').value = sync.workspace || '';
+    document.getElementById('sbUrl').value = sync.url || ''; document.getElementById('sbKey').value = sync.key || ''; document.getElementById('sbWorkspace').value = sync.workspace || '';
     renderSetupGuide();
     try { const a = localStorage.getItem(ACTIVE_KEY); if (a) active = JSON.parse(a); } catch (e) {}
     renderAll();
@@ -354,195 +336,202 @@
     if (sync.url && sync.key && sync.workspace) connectSync(true);
   }
   function applyState(d, fromCloud) {
-    collection = d.collection || [];
     if (d.typeLabels) typeLabels = { A:'Game Type A',B:'Game Type B',C:'Game Type C',D:'Game Type D', ...d.typeLabels };
     if (!fromCloud && d.theme) theme = d.theme;
-    if (d.players) { players = d.players; games = (d.games || []).map(g => ({ playerDocs: {}, ...g })); }
-    else migrateFromNames(d);
+    if (d.collections) {          // new format
+      collections = d.collections;
+      players = (d.players || []).map(p => ({ defaultCollId: '', ...p }));
+      games = (d.games || []).map(g => ({ playerColl: {}, playerDocs: {}, ...g }));
+    } else {                      // migrate from older formats
+      migrateOld(d);
+    }
+    if (collections.length && (!activeCollId || !collById(activeCollId))) activeCollId = collections[0].id;
   }
-  function migrateFromNames(d) {
-    const byName = {};
-    const getId = name => { const k = name.toLowerCase(); if (!byName[k]) byName[k] = { id: pid(), name }; return byName[k].id; };
-    (d.roster || []).forEach(getId);
-    games = (d.games || d.matches || []).map(g => {
-      const standings = (g.standings || []).map(getId); const playerDocs = {};
-      if (g.playerDocs) Object.keys(g.playerDocs).forEach(nm => playerDocs[getId(nm)] = g.playerDocs[nm]);
-      else if (g.docs && g.docs.length && standings[0]) playerDocs[standings[0]] = g.docs;
-      return { id: g.id || uid(), type: g.type || 'A', ts: g.ts || Date.now(), standings, playerDocs };
-    });
-    players = Object.values(byName);
+  function migrateOld(d) {
+    // Old single flat collection -> one "Main" Type-A collection.
+    const main = { id: cid(), name: 'Main', type: 'A', docs: (d.collection || []).map(c => ({ id: c.id, name: c.name, img: c.img || '', meta: c.meta || '' })) };
+    collections = [main];
+    if (d.players) { players = d.players.map(p => ({ defaultCollId: '', ...p })); games = (d.games || []).map(g => ({ playerColl: {}, ...g })); }
+    else {
+      // very old name-based
+      const byName = {}; const getId = name => { const k = name.toLowerCase(); if (!byName[k]) byName[k] = { id: pid(), name, defaultCollId: '' }; return byName[k].id; };
+      (d.roster || []).forEach(getId);
+      games = (d.games || d.matches || []).map(g => { const standings = (g.standings || []).map(getId); const playerDocs = {}; if (g.playerDocs) Object.keys(g.playerDocs).forEach(nm => playerDocs[getId(nm)] = g.playerDocs[nm]); else if (g.docs && standings[0]) playerDocs[standings[0]] = g.docs; return { id: g.id || uid(), type: g.type || 'A', ts: g.ts || Date.now(), standings, playerColl: {}, playerDocs }; });
+      players = Object.values(byName);
+    }
   }
-  function renderAll() { populateTypeSelects(); renderCollection(); renderSession(); renderRosterPick(); refreshStats(); renderTypeLabelInputs(); renderRosterList(); }
-
+  function renderAll() { populateTypeSelects(); renderTargetColl(); renderCollections(); renderSession(); renderRosterPick(); refreshStats(); renderTypeLabelInputs(); renderRosterList(); }
   function applyTheme() { document.documentElement.setAttribute('data-theme', theme); document.getElementById('themeBtn').textContent = theme === 'dark' ? '🌙' : '☀️'; }
   function toggleTheme() { theme = theme === 'dark' ? 'light' : 'dark'; applyTheme(); save(); }
 
-  // ============================================================
-  //  CLOUD SYNC (Supabase REST — no SDK needed)
-  //  Table: workspaces (code text primary key, data jsonb, updated_at timestamptz)
-  // ============================================================
-  function setSyncUI(state, text) {
-    const dot = document.getElementById('syncDot'), lbl = document.getElementById('syncLabel');
-    dot.className = 'syncdot ' + (state || '');
-    lbl.innerHTML = `<span class="syncdot ${state || ''}" id="syncDot"></span>${text}`;
-  }
+  // ---------- Sync (unchanged from prior version) ----------
+  function setSyncUI(state, text) { const lbl = document.getElementById('syncLabel'); lbl.innerHTML = `<span class="syncdot ${state || ''}"></span>${text}`; }
   function sbHeaders() { return { 'apikey': sync.key, 'Authorization': 'Bearer ' + sync.key, 'Content-Type': 'application/json' }; }
-  function hashState() { try { return JSON.stringify({ collection, players, games, typeLabels }).length + ':' + (games.length) + ':' + (players.length) + ':' + (collection.length); } catch (e) { return Math.random() + ''; } }
-
+  function hashState() { try { return JSON.stringify(snapshot()).length + ':' + games.length + ':' + players.length + ':' + collections.length; } catch (e) { return Math.random() + ''; } }
   async function connectSync(silent) {
-    sync.url = document.getElementById('sbUrl').value.trim().replace(/\/$/, '');
-    sync.key = document.getElementById('sbKey').value.trim();
-    sync.workspace = document.getElementById('sbWorkspace').value.trim();
+    sync.url = document.getElementById('sbUrl').value.trim().replace(/\/$/, ''); sync.key = document.getElementById('sbKey').value.trim(); sync.workspace = document.getElementById('sbWorkspace').value.trim();
     const status = document.getElementById('syncStatus');
     if (!sync.url || !sync.key || !sync.workspace) { if (!silent) status.innerHTML = '<span class="loss">Fill in URL, key, and workspace code.</span>'; return; }
-    saveSyncCfg();
-    setSyncUI('busy', 'Connecting…');
+    saveSyncCfg(); setSyncUI('busy', 'Connecting…');
     try {
-      // Try to fetch existing workspace row
-      const res = await fetch(`${sync.url}/rest/v1/workspaces?code=eq.${encodeURIComponent(sync.workspace)}&select=data,updated_at`, { headers: sbHeaders() });
+      const res = await fetch(`${sync.url}/rest/v1/workspaces?code=eq.${encodeURIComponent(sync.workspace)}&select=data`, { headers: sbHeaders() });
       if (!res.ok) throw new Error('HTTP ' + res.status);
-      const rows = await res.json();
-      sync.connected = true;
-      if (rows.length && rows[0].data) {
-        // pull remote into local
-        suppressPush = true; applyState(rows[0].data, true); suppressPush = false;
-        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot())); } catch (e) {}
-        renderAll();
-        status.innerHTML = '<span class="win">Connected. Pulled shared data.</span>';
-      } else {
-        // create the row with our current data
-        await pushNow(true);
-        status.innerHTML = '<span class="win">Connected. Created new shared workspace from your data.</span>';
-      }
-      lastPushedHash = hashState();
-      setSyncUI('on', 'Synced');
-      startPolling();
-    } catch (e) {
-      sync.connected = false; setSyncUI('err', 'Sync error');
-      status.innerHTML = `<span class="loss">Couldn't connect: ${esc(e.message)}.</span> Check the credentials and that the <code>workspaces</code> table exists (setup steps below).`;
-    }
+      const rows = await res.json(); sync.connected = true;
+      if (rows.length && rows[0].data) { suppressPush = true; applyState(rows[0].data, true); suppressPush = false; try { localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot())); } catch (e) {} renderAll(); status.innerHTML = '<span class="win">Connected. Pulled shared data.</span>'; }
+      else { await pushNow(true); status.innerHTML = '<span class="win">Connected. Created new shared workspace.</span>'; }
+      lastPushedHash = hashState(); setSyncUI('on', 'Synced'); startPolling();
+    } catch (e) { sync.connected = false; setSyncUI('err', 'Sync error'); status.innerHTML = `<span class="loss">Couldn't connect: ${esc(e.message)}.</span> Check credentials and that the table exists.`; }
   }
-  function disconnectSync() {
-    sync.connected = false; if (pollTimer) clearInterval(pollTimer); if (syncTimer) clearTimeout(syncTimer);
-    setSyncUI('', 'Offline'); document.getElementById('syncStatus').textContent = 'Disconnected. Data stays on this device.';
-  }
+  function disconnectSync() { sync.connected = false; if (pollTimer) clearInterval(pollTimer); if (syncTimer) clearTimeout(syncTimer); setSyncUI('', 'Offline'); document.getElementById('syncStatus').textContent = 'Disconnected.'; }
   function schedulePush() { if (syncTimer) clearTimeout(syncTimer); syncTimer = setTimeout(() => pushNow(false), 800); }
   async function pushNow(initial) {
-    if (!sync.connected && !initial) return;
-    if (pushing) { schedulePush(); return; }
+    if (!sync.connected && !initial) return; if (pushing) { schedulePush(); return; }
     pushing = true; setSyncUI('busy', 'Saving…');
-    try {
-      const body = [{ code: sync.workspace, data: snapshot(), updated_at: new Date().toISOString() }];
-      const res = await fetch(`${sync.url}/rest/v1/workspaces?on_conflict=code`, {
-        method: 'POST', headers: { ...sbHeaders(), 'Prefer': 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(body)
-      });
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      lastPushedHash = hashState();
-      setSyncUI('on', 'Synced');
-    } catch (e) { setSyncUI('err', 'Save failed'); }
-    pushing = false;
+    try { const body = [{ code: sync.workspace, data: snapshot(), updated_at: new Date().toISOString() }];
+      const res = await fetch(`${sync.url}/rest/v1/workspaces?on_conflict=code`, { method: 'POST', headers: { ...sbHeaders(), 'Prefer': 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(body) });
+      if (!res.ok) throw new Error('HTTP ' + res.status); lastPushedHash = hashState(); setSyncUI('on', 'Synced');
+    } catch (e) { setSyncUI('err', 'Save failed'); } pushing = false;
   }
   function startPolling() {
     if (pollTimer) clearInterval(pollTimer);
-    pollTimer = setInterval(async () => {
-      if (!sync.connected || pushing) return;
-      try {
-        const res = await fetch(`${sync.url}/rest/v1/workspaces?code=eq.${encodeURIComponent(sync.workspace)}&select=data`, { headers: sbHeaders() });
-        if (!res.ok) return;
-        const rows = await res.json();
-        if (rows.length && rows[0].data) {
-          const remote = rows[0].data;
-          const remoteHash = JSON.stringify({ collection: remote.collection, players: remote.players, games: remote.games, typeLabels: remote.typeLabels }).length + ':' + (remote.games||[]).length + ':' + (remote.players||[]).length + ':' + (remote.collection||[]).length;
-          if (remoteHash !== hashState() && remoteHash !== lastPushedHash) {
-            suppressPush = true; applyState(remote, true); suppressPush = false;
-            try { localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot())); } catch (e) {}
-            renderAll();
-            setSyncUI('on', 'Synced (updated)');
-          }
-        }
-      } catch (e) {}
-    }, 5000);
+    pollTimer = setInterval(async () => { if (!sync.connected || pushing) return;
+      try { const res = await fetch(`${sync.url}/rest/v1/workspaces?code=eq.${encodeURIComponent(sync.workspace)}&select=data`, { headers: sbHeaders() }); if (!res.ok) return; const rows = await res.json();
+        if (rows.length && rows[0].data) { const remote = rows[0].data; const rHash = JSON.stringify({ collections: remote.collections, players: remote.players, games: remote.games, typeLabels: remote.typeLabels, theme }).length + ':' + (remote.games||[]).length + ':' + (remote.players||[]).length + ':' + (remote.collections||[]).length;
+          if (rHash !== hashState() && rHash !== lastPushedHash) { suppressPush = true; applyState(remote, true); suppressPush = false; try { localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot())); } catch (e) {} renderAll(); setSyncUI('on', 'Synced (updated)'); } }
+      } catch (e) {} }, 5000);
   }
-  function renderSetupGuide() {
-    document.getElementById('sbSetup').innerHTML =
-      `<strong>One-time Supabase setup:</strong> 1) Create a free project at supabase.com. 2) In the SQL editor run:
-      <br><code>create table workspaces (code text primary key, data jsonb, updated_at timestamptz);</code>
-      <br><code>alter table workspaces enable row level security;</code>
-      <br><code>create policy "anon all" on workspaces for all using (true) with check (true);</code>
-      <br>3) Settings → API: copy the Project URL and the <em>anon public</em> key into the fields above. Share those two values + a workspace code with your group. <em>(The anon key is safe for client use with the policy above; anyone with it and the code can read/write this table, so use a non-obvious workspace code.)</em>`;
-  }
+  function renderSetupGuide() { document.getElementById('sbSetup').innerHTML = `<strong>One-time Supabase setup:</strong> create a free project, then in the SQL editor run:<br><code>create table workspaces (code text primary key, data jsonb, updated_at timestamptz);</code><br><code>alter table workspaces enable row level security;</code><br><code>create policy "anon all" on workspaces for all using (true) with check (true);</code><br>Then paste your Project URL + anon key above and share them with a workspace code.`; }
 
   // ============================================================
-  //  API — replace this section for your own document service
+  //  API
   // ============================================================
-  async function fetchFromAPI(query) {
-    const res = await fetch('https://api.scryfall.com/cards/search?q=' + encodeURIComponent(query));
-    if (!res.ok) throw new Error('No results');
-    const json = await res.json();
-    return (json.data || []).slice(0, 12).map(mapItem);
-  }
+  async function fetchFromAPI(query) { const res = await fetch('https://api.scryfall.com/cards/search?q=' + encodeURIComponent(query)); if (!res.ok) throw new Error('No results'); const json = await res.json(); return (json.data || []).slice(0, 12).map(mapItem); }
   async function fetchManyByName(names) {
-    const found = [], notFound = [];
+    const foundByName = {}, stillMissing = [];
     for (let i = 0; i < names.length; i += 75) {
-      const chunk = names.slice(i, i + 75);
-      const res = await fetch('https://api.scryfall.com/cards/collection', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifiers: chunk.map(n => ({ name: n })) }) });
-      if (!res.ok) { chunk.forEach(n => notFound.push(n)); continue; }
-      const json = await res.json();
-      (json.data || []).forEach(c => found.push(mapItem(c)));
-      (json.not_found || []).forEach(nf => notFound.push(nf.name || JSON.stringify(nf)));
+      const chunk = names.slice(i, i + 75); let ok = false, json = null;
+      try { const res = await fetch('https://api.scryfall.com/cards/collection', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifiers: chunk.map(n => ({ name: n })) }) }); ok = res.ok; if (ok) json = await res.json(); } catch (e) {}
+      if (ok && json) (json.data || []).forEach(c => { foundByName[c.name.toLowerCase()] = mapItem(c); (c.card_faces || []).forEach(f => { if (f.name) foundByName[f.name.toLowerCase()] = mapItem(c); }); });
+      chunk.forEach(n => { if (!foundByName[n.toLowerCase()]) stillMissing.push(n); });
       if (i + 75 < names.length) await new Promise(r => setTimeout(r, 100));
     }
-    return { found, notFound };
+    const fuzzyResolved = {};
+    for (let i = 0; i < stillMissing.length; i++) { const n = stillMissing[i]; try { const res = await fetch('https://api.scryfall.com/cards/named?fuzzy=' + encodeURIComponent(n)); if (res.ok) { const c = await res.json(); if (c && c.id) fuzzyResolved[n.toLowerCase()] = mapItem(c); } } catch (e) {} await new Promise(r => setTimeout(r, 90)); }
+    const items = [], notFound = [];
+    names.forEach(n => { const hit = foundByName[n.toLowerCase()] || fuzzyResolved[n.toLowerCase()]; if (hit) items.push(hit); else { items.push(null); notFound.push(n); } });
+    return { items, notFound };
   }
   function mapItem(c) { return { id: c.id, name: c.name, img: c.image_uris ? c.image_uris.small : (c.card_faces && c.card_faces[0].image_uris ? c.card_faces[0].image_uris.small : ''), meta: c.type_line || '' }; }
-  // ============================================================
 
   function thumb(it) { return it.img ? `<img class="thumb" src="${it.img}" alt="" onerror="this.outerHTML='<div class=\\'thumb\\'>▢</div>'">` : `<div class="thumb">▢</div>`; }
+
+  // ---------- Target collection (Browse) ----------
+  function renderTargetColl() {
+    const sel = document.getElementById('targetColl'); if (!sel) return;
+    const cur = sel.value || activeCollId;
+    sel.innerHTML = collections.map(c => `<option value="${c.id}">${esc(c.name)} — Type ${c.type}</option>`).join('');
+    if (cur && collById(cur)) sel.value = cur;
+    const tc = collById(sel.value);
+    document.getElementById('targetCollMeta').textContent = tc ? `${tc.docs.length} item${tc.docs.length === 1 ? '' : 's'}` : '';
+  }
+  function targetCollection() { const sel = document.getElementById('targetColl'); return collById(sel.value) || collections[0]; }
+
+  // Add a doc to a collection, honoring the Type-A single-instance rule. Returns 'added' | 'dup-skip'.
+  function addDocToCollection(coll, item) {
+    if (coll.type === 'A' && coll.docs.some(d => (d.baseId || d.id) === item.id)) return 'dup-skip';
+    const baseId = item.id; const dupCount = coll.docs.filter(d => (d.baseId || d.id) === baseId).length;
+    coll.docs.push({ ...item, baseId, id: baseId + (dupCount ? '#' + (dupCount + 1) : '') });
+    return 'added';
+  }
+
   async function doSearch() {
     const q = document.getElementById('searchInput').value.trim(); const box = document.getElementById('searchResults');
     if (!q) { box.innerHTML = '<div class="empty">Type something to search.</div>'; return; }
     box.innerHTML = '<div class="spinner">Searching…</div>';
-    try { const items = await fetchFromAPI(q);
-      if (!items.length) { box.innerHTML = '<div class="empty">No results.</div>'; return; }
-      box.innerHTML = items.map(it => `<div class="result-item">${thumb(it)}<div class="item-name">${esc(it.name)}<div class="item-meta">${esc(it.meta)}</div></div><button onclick='addToCollection(${JSON.stringify(it).replace(/'/g, "&#39;")})'>Add</button></div>`).join('');
+    try { const items = await fetchFromAPI(q); if (!items.length) { box.innerHTML = '<div class="empty">No results.</div>'; return; }
+      box.innerHTML = items.map(it => `<div class="result-item">${thumb(it)}<div class="item-name">${esc(it.name)}<div class="item-meta">${esc(it.meta)}</div></div><button onclick='addSearchResult(${JSON.stringify(it).replace(/'/g, "&#39;")})'>Add</button></div>`).join('');
     } catch (e) { box.innerHTML = '<div class="empty">Search failed. Check the API endpoint.</div>'; }
   }
+  function addSearchResult(item) {
+    const coll = targetCollection(); const r = addDocToCollection(coll, item);
+    save(); renderTargetColl(); renderCollections();
+    if (r === 'dup-skip') { const s = document.getElementById('bulkStatus'); s.textContent = `"${item.name}" is already in ${coll.name} (Type A allows one of each).`; setTimeout(() => s.textContent = '', 2500); }
+  }
   async function bulkImport() {
-    let names = document.getElementById('bulkInput').value.split('\n').map(s => s.trim()).filter(Boolean);
-    const seen = new Set(); names = names.filter(n => { const k = n.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+    const coll = targetCollection();
+    const rawLines = document.getElementById('bulkInput').value.split('\n').map(s => s.trim()).filter(Boolean);
     const status = document.getElementById('bulkStatus'), box = document.getElementById('bulkResults');
-    if (!names.length) { status.textContent = 'Paste at least one name.'; return; }
-    status.textContent = `Importing ${names.length} unique name${names.length === 1 ? '' : 's'}…`; box.innerHTML = '';
-    try { const { found, notFound } = await fetchManyByName(names); let added = 0, skipped = 0;
-      found.forEach(item => { if (collection.some(c => c.id === item.id)) skipped++; else { collection.push(item); added++; } });
-      save(); renderCollection();
-      status.innerHTML = `Done — <span class="win">${added} added</span>, ${skipped} already in collection` + (notFound.length ? `, <span class="loss">${notFound.length} not found</span>` : '') + '.';
-      box.innerHTML = notFound.length ? '<div class="empty">Not found: ' + esc(notFound.join(', ')) + '</div>' : '';
-      if (added) document.getElementById('bulkInput').value = '';
+    if (!rawLines.length) { status.textContent = 'Paste at least one name.'; return; }
+    const parsed = rawLines.map(parseBulkLine);
+    const uniqueNames = [...new Set(parsed.map(p => p.name.toLowerCase()))].map(k => parsed.find(p => p.name.toLowerCase() === k).name);
+    const totalCopies = parsed.reduce((s, p) => s + p.qty, 0);
+    status.textContent = `Looking up ${uniqueNames.length} name${uniqueNames.length === 1 ? '' : 's'} (${totalCopies} cop${totalCopies === 1 ? 'y' : 'ies'}) into ${coll.name}…`; box.innerHTML = '';
+    try {
+      const { notFound } = await fetchManyByName(uniqueNames);
+      const resolved = {}; const { items } = await fetchManyByName(uniqueNames); uniqueNames.forEach((n, i) => { if (items[i]) resolved[n.toLowerCase()] = items[i]; });
+      const missSet = new Set(notFound.map(n => n.toLowerCase()));
+      let added = 0, dupSkipped = 0, manual = 0;
+      parsed.forEach(p => { const hit = resolved[p.name.toLowerCase()];
+        for (let i = 0; i < p.qty; i++) {
+          if (hit) { const r = addDocToCollection(coll, hit); if (r === 'added') added++; else dupSkipped++; }
+          else { if (coll.type === 'A' && coll.docs.some(d => d.name.toLowerCase() === p.name.toLowerCase())) { dupSkipped++; } else { coll.docs.push({ id: 'manual-' + uid(), baseId: 'manual-' + p.name.toLowerCase(), name: p.name, img: '', meta: 'unmatched — added manually' }); manual++; } }
+        }
+      });
+      save(); renderTargetColl(); renderCollections();
+      status.innerHTML = `Done — <span class="win">${added} added</span>` + (manual ? `, <span class="loss">${manual} manual (unmatched)</span>` : '') + (dupSkipped ? `, ${dupSkipped} skipped (Type-A duplicate)` : '') + '.';
+      box.innerHTML = notFound.length ? `<div class="empty">Couldn't match: ${esc(notFound.join(', '))}</div>` : '';
+      document.getElementById('bulkInput').value = '';
     } catch (e) { status.innerHTML = '<span class="loss">Batch import failed.</span>'; }
   }
+  function parseBulkLine(line) { const m = line.match(/^(\d+)\s*x?\s+(.+)$/i); if (m) { const q = parseInt(m[1], 10); if (q > 0 && m[2].trim()) return { name: m[2].trim(), qty: Math.min(q, 99) }; } return { name: line, qty: 1 }; }
   function manualAdd() {
+    const coll = targetCollection();
     const name = document.getElementById('manualName').value.trim(), meta = document.getElementById('manualMeta').value.trim(); if (!name) return;
-    if (collection.some(c => c.name.toLowerCase() === name.toLowerCase())) { alert('Already in collection.'); return; }
-    collection.push({ id: 'manual-' + uid(), name, img: '', meta });
-    document.getElementById('manualName').value = ''; document.getElementById('manualMeta').value = ''; save(); renderCollection();
+    if (coll.type === 'A' && coll.docs.some(d => d.name.toLowerCase() === name.toLowerCase())) { alert('Already in this Type-A collection.'); return; }
+    coll.docs.push({ id: 'manual-' + uid(), baseId: 'manual-' + name.toLowerCase(), name, img: '', meta });
+    document.getElementById('manualName').value = ''; document.getElementById('manualMeta').value = ''; save(); renderTargetColl(); renderCollections();
   }
 
-  function addToCollection(item) { if (collection.some(c => c.id === item.id)) return; collection.push(item); save(); renderCollection(); }
-  function removeFromCollection(id) { collection = collection.filter(c => c.id !== id); lobby.forEach(p => p.docs.delete(id)); save(); renderCollection(); renderLobby(); }
-  function clearCollection() { if (!confirm('Clear the entire collection?')) return; collection = []; lobby.forEach(p => p.docs.clear()); save(); renderCollection(); renderLobby(); }
-  function renderCollection() {
-    document.getElementById('collCount').textContent = collection.length;
-    const f = (document.getElementById('collSearch')?.value || '').trim().toLowerCase();
-    const list = f ? collection.filter(c => c.name.toLowerCase().includes(f)) : collection;
-    const box = document.getElementById('collectionList');
-    box.innerHTML = list.length ? list.map(it => `<div class="coll-item">${thumb(it)}<div class="item-name">${esc(it.name)}<div class="item-meta">${esc(it.meta)}</div></div><button class="danger small" onclick="removeFromCollection('${it.id}')">Remove</button></div>`).join('')
-      : `<div class="empty">${collection.length ? 'No matches for "' + esc(f) + '".' : 'Nothing saved yet.'}</div>`;
+  // ---------- Collections tab ----------
+  function createCollection() {
+    const name = document.getElementById('newCollName').value.trim(); const type = document.getElementById('newCollType').value;
+    if (!name) return;
+    const c = { id: cid(), name, type, docs: [] }; collections.push(c); activeCollId = c.id;
+    document.getElementById('newCollName').value = ''; save(); renderAll();
   }
+  function deleteCollection(id) {
+    const c = collById(id); if (!c) return;
+    const usedByDefault = players.some(p => p.defaultCollId === id);
+    if (!confirm(`Delete collection "${c.name}"${usedByDefault ? ' (it is some players\' default)' : ''}? Past games are unaffected.`)) return;
+    collections = collections.filter(x => x.id !== id);
+    players.forEach(p => { if (p.defaultCollId === id) p.defaultCollId = ''; });
+    if (activeCollId === id) activeCollId = collections[0] ? collections[0].id : null;
+    if (!collections.length) collections = [{ id: cid(), name: 'Main', type: 'A', docs: [] }], activeCollId = collections[0].id;
+    save(); renderAll();
+  }
+  function renameCollection(id) { const c = collById(id); if (!c) return; const nv = prompt('Rename collection:', c.name); if (nv === null) return; const n = nv.trim(); if (n) c.name = n; save(); renderAll(); }
+  function removeDoc(collId, docId) { const c = collById(collId); if (!c) return; c.docs = c.docs.filter(d => d.id !== docId); save(); renderTargetColl(); renderCollections(); }
+  function clearCollDocs(id) { const c = collById(id); if (!c) return; if (!confirm(`Remove all documents from "${c.name}"?`)) return; c.docs = []; save(); renderTargetColl(); renderCollections(); }
+  function renderCollections() {
+    const tabs = document.getElementById('collTabs');
+    tabs.innerHTML = collections.map(c => `<span class="coll-tab ${c.id === activeCollId ? 'active' : ''}" onclick="selectColl('${c.id}')">${esc(c.name)} · <span class="typebadge">Type ${c.type}</span> · ${c.docs.length}</span>`).join('');
+    const c = collById(activeCollId); const box = document.getElementById('collDetail');
+    if (!c) { box.innerHTML = '<div class="empty">No collection selected.</div>'; return; }
+    box.innerHTML = `
+      <div class="row" style="justify-content:space-between;margin-bottom:8px;">
+        <div><strong>${esc(c.name)}</strong> <span class="typebadge">Type ${c.type}</span> <span class="item-meta">· ${c.docs.length} item${c.docs.length === 1 ? '' : 's'}${c.type === 'A' ? ' · one of each' : ''}</span></div>
+        <div class="row" style="gap:6px;"><button class="ghost small" onclick="renameCollection('${c.id}')">Rename</button><button class="danger small" onclick="clearCollDocs('${c.id}')">Empty</button><button class="danger small" onclick="deleteCollection('${c.id}')">Delete</button></div>
+      </div>
+      <div class="hint">Add documents from the Browse tab (set this as the target collection there).</div>
+      <div class="results">${c.docs.length ? c.docs.map(d => `<div class="coll-item">${thumb(d)}<div class="item-name">${esc(d.name)}<div class="item-meta">${esc(d.meta || '')}</div></div><button class="danger small" onclick="removeDoc('${c.id}','${d.id}')">Remove</button></div>`).join('') : '<div class="empty">No documents yet.</div>'}</div>`;
+  }
+  function selectColl(id) { activeCollId = id; renderCollections(); }
 
+  // ---------- Types ----------
   function populateTypeSelects() {
     const opts = Object.keys(typeLabels).map(k => `<option value="${k}">${esc(typeLabels[k])}</option>`).join('');
-    const gt = document.getElementById('gameType'); if (gt) gt.innerHTML = opts;
+    const gt = document.getElementById('gameType'); if (gt) { const cur = gt.value; gt.innerHTML = opts; if (cur) gt.value = cur; }
+    const nct = document.getElementById('newCollType'); if (nct) { const cur = nct.value; nct.innerHTML = Object.keys(typeLabels).map(k => `<option value="${k}">Type ${k} — ${esc(typeLabels[k])}</option>`).join(''); if (cur) nct.value = cur; }
     const lb = document.getElementById('lbFilter'); if (lb) { const cur = lb.value; lb.innerHTML = '<option value="ALL">All Types</option>' + opts; if (cur) lb.value = cur; }
   }
   function renderTypeLabelInputs() { const box = document.getElementById('typeLabels'); if (!box) return; box.innerHTML = Object.keys(typeLabels).map(k => `<div class="row" style="margin-bottom:8px;"><span class="typebadge" style="flex:none;">${k}</span><input id="lbl-${k}" value="${esc(typeLabels[k])}"></div>`).join(''); }
@@ -550,61 +539,79 @@
   const typeName = t => typeLabels[t] || ('Type ' + t);
 
   // ---------- Roster ----------
-  function rosterAdd() { const inp = document.getElementById('rosterNew'); const name = inp.value.trim(); if (!name) return; players.push({ id: pid(), name }); inp.value=''; save(); renderRosterList(); renderRosterPick(); }
-  function rosterRename(id) { const p = playerById(id); if (!p) return; const nv = prompt('Rename player:', p.name); if (nv === null) return; const name = nv.trim(); if (!name) return; p.name = name; save(); renderAll(); }
+  function rosterAdd() { const inp = document.getElementById('rosterNew'); const name = inp.value.trim(); if (!name) return; players.push({ id: pid(), name, defaultCollId: '' }); inp.value=''; save(); renderRosterList(); renderRosterPick(); }
+  function rosterRename(id) { const p = playerById(id); if (!p) return; const nv = prompt('Rename player:', p.name); if (nv === null) return; const name = nv.trim(); if (name) p.name = name; save(); renderAll(); }
   function rosterDelete(id) { if (games.some(g => g.standings.includes(id))) { alert('This player has game history and can\'t be deleted. Rename instead.'); return; } const p = playerById(id); if (!confirm('Remove "' + (p ? p.name : '') + '"?')) return; players = players.filter(x => x.id !== id); save(); renderRosterList(); renderRosterPick(); }
+  function setDefaultColl(id, collId) { const p = playerById(id); if (!p) return; p.defaultCollId = collId; save(); }
   function renderRosterList() {
     const box = document.getElementById('rosterList'); if (!box) return;
     box.innerHTML = players.length ? players.map(p => { const count = games.filter(g => g.standings.includes(p.id)).length;
-      return `<div class="player-row"><div class="item-name">${esc(p.name)} <span class="item-meta">· ${count} game${count === 1 ? '' : 's'}</span><div class="pid">${p.id}</div></div><button class="ghost small" onclick="rosterRename('${p.id}')">Rename</button><button class="danger small" onclick="rosterDelete('${p.id}')">Remove</button></div>`;
+      const opts = `<option value="">— no default —</option>` + collections.map(c => `<option value="${c.id}" ${p.defaultCollId === c.id ? 'selected' : ''}>${esc(c.name)} (Type ${c.type})</option>`).join('');
+      return `<div class="player-row"><div class="item-name">${esc(p.name)} <span class="item-meta">· ${count} game${count === 1 ? '' : 's'}</span></div>
+        <select style="flex:none;max-width:200px;" onchange="setDefaultColl('${p.id}', this.value)">${opts}</select>
+        <button class="ghost small" onclick="rosterRename('${p.id}')">Rename</button><button class="danger small" onclick="rosterDelete('${p.id}')">Remove</button></div>`;
     }).join('') : '<div class="empty">No players yet.</div>';
   }
   function renderRosterPick() { const box = document.getElementById('rosterPick'); if (!box) return; const inLobby = new Set(lobby.map(p => p.pid)); const avail = players.filter(p => !inLobby.has(p.id)); box.innerHTML = avail.length ? avail.map(p => `<span class="chip" onclick="addPlayerFromRoster('${p.id}')">+ ${esc(p.name)}</span>`).join('') : (players.length ? '<span class="item-meta">All roster players are in this game.</span>' : ''); }
 
-  // ---------- Lobby ----------
+  // ---------- Lobby (collection per player, filtered by game type) ----------
+  function gameTypeNow() { return document.getElementById('gameType').value; }
+  function collectionsOfType(t) { return collections.filter(c => c.type === t); }
+  function onGameTypeChange() { // reset assignments that no longer match the type
+    const t = gameTypeNow();
+    lobby.forEach(p => { const c = collById(p.collId); if (!c || c.type !== t) p.collId = defaultCollForPlayer(p.pid, t); });
+    renderLobby();
+  }
+  function defaultCollForPlayer(pidv, t) { const p = playerById(pidv); if (p && p.defaultCollId) { const c = collById(p.defaultCollId); if (c && c.type === t) return c.id; } const first = collectionsOfType(t)[0]; return first ? first.id : ''; }
   function addPlayerByName() {
     const inp = document.getElementById('newPlayer'); const name = inp.value.trim(); if (!name) return;
     const existing = players.find(p => p.name.toLowerCase() === name.toLowerCase());
-    if (existing && !confirm(`A player named "${existing.name}" already exists. Add that existing player? (Cancel to create a separate new player with the same name.)`)) { const np = { id: pid(), name }; players.push(np); addLobby(np.id); }
+    if (existing && !confirm(`A player named "${existing.name}" already exists. Add that existing player? (Cancel to create a separate one.)`)) { const np = { id: pid(), name, defaultCollId: '' }; players.push(np); addLobby(np.id); }
     else addLobby(ensurePlayerByName(name));
     inp.value=''; save(); renderRosterList();
   }
   function addPlayerFromRoster(id) { addLobby(id); }
-  function addLobby(id) { if (lobby.some(p => p.pid === id)) return; lobby.push({ pid: id, docs: new Set() }); renderLobby(); renderRosterPick(); }
+  function addLobby(idv) { if (lobby.some(p => p.pid === idv)) return; lobby.push({ pid: idv, collId: defaultCollForPlayer(idv, gameTypeNow()) }); renderLobby(); renderRosterPick(); }
   function removePlayer(i) { lobby.splice(i, 1); renderLobby(); renderRosterPick(); }
   function movePlayer(i, dir) { const j = i + dir; if (j < 0 || j >= lobby.length) return; [lobby[i], lobby[j]] = [lobby[j], lobby[i]]; renderLobby(); }
+  function setLobbyColl(i, collId) { lobby[i].collId = collId; renderLobby(); }
   function renderLobby() {
-    const box = document.getElementById('lobbyList');
-    box.innerHTML = lobby.length ? lobby.map((p, i) => `<div class="player-setup"><div class="phead"><div class="place-tag">${i + 1}</div><div class="item-name">${esc(nameOf(p.pid))} <span class="doc-count">· ${p.docs.size} doc${p.docs.size === 1 ? '' : 's'}</span></div><div class="ord-btns"><button onclick="movePlayer(${i},-1)" ${i === 0 ? 'disabled style="opacity:.3"' : ''}>▲</button><button onclick="movePlayer(${i},1)" ${i === lobby.length - 1 ? 'disabled style="opacity:.3"' : ''}>▼</button></div></div><div class="row"><button class="ghost small" onclick="openDocModal(${i})">Assign Documents</button><button class="danger small" onclick="removePlayer(${i})">Remove</button></div></div>`).join('') : '<div class="empty">No players added yet.</div>';
+    const box = document.getElementById('lobbyList'); const t = gameTypeNow(); const avail = collectionsOfType(t);
+    if (!avail.length) { box.innerHTML = `<div class="empty">No collections of ${typeName(t)} exist yet. Create one on the Collections tab (set its type to ${t}).</div>`; return; }
+    box.innerHTML = lobby.length ? lobby.map((p, i) => {
+      const opts = avail.map(c => `<option value="${c.id}" ${p.collId === c.id ? 'selected' : ''}>${esc(c.name)} (${c.docs.length})</option>`).join('');
+      const c = collById(p.collId);
+      return `<div class="player-setup"><div class="phead"><div class="place-tag">${i + 1}</div><div class="item-name">${esc(nameOf(p.pid))} <span class="doc-count">· ${c ? c.docs.length + ' docs' : 'no collection'}</span></div><div class="ord-btns"><button onclick="movePlayer(${i},-1)" ${i === 0 ? 'disabled style="opacity:.3"' : ''}>▲</button><button onclick="movePlayer(${i},1)" ${i === lobby.length - 1 ? 'disabled style="opacity:.3"' : ''}>▼</button></div></div>
+        <div class="row"><label class="lbl-inline" style="flex:none;margin:0 6px 0 0;">Collection:</label><select style="flex:1;" onchange="setLobbyColl(${i}, this.value)">${opts}</select><button class="danger small" onclick="removePlayer(${i})">Remove</button></div></div>`;
+    }).join('') : '<div class="empty">No players added yet.</div>';
   }
-  function openDocModal(i) { if (!collection.length) { alert('Add documents to your collection first.'); return; } modalPlayerIdx = i; document.getElementById('docModalTitle').textContent = 'Documents for ' + nameOf(lobby[i].pid); document.getElementById('docModalSearch').value = ''; document.getElementById('docModal').style.display = 'block'; renderDocModal(); }
-  function closeDocModal() { document.getElementById('docModal').style.display = 'none'; modalPlayerIdx = null; renderLobby(); }
-  function renderDocModal() { if (modalPlayerIdx === null) return; const sel = lobby[modalPlayerIdx].docs; const f = (document.getElementById('docModalSearch').value || '').trim().toLowerCase(); const list = f ? collection.filter(c => c.name.toLowerCase().includes(f)) : collection; document.getElementById('docModalChips').innerHTML = list.length ? list.map(it => `<span class="chip ${sel.has(it.id) ? 'sel' : ''}" onclick="toggleModalDoc('${it.id}')">${esc(it.name)}</span>`).join('') : '<span class="empty">No matches.</span>'; }
-  function toggleModalDoc(id) { const sel = lobby[modalPlayerIdx].docs; sel.has(id) ? sel.delete(id) : sel.add(id); renderDocModal(); }
 
   // ---------- Active game ----------
   function startGame() {
     if (lobby.length < 2) { alert('Add at least 2 players.'); return; }
-    const playerDocs = {}; lobby.forEach(p => playerDocs[p.pid] = collection.filter(c => p.docs.has(c.id)).map(c => c.name));
-    active = { type: document.getElementById('gameType').value, alive: lobby.map(p => p.pid), eliminated: [], playerDocs }; saveActive();
+    const t = gameTypeNow();
+    if (lobby.some(p => { const c = collById(p.collId); return !c || c.type !== t; })) { alert('Every player needs a collection of ' + typeName(t) + '.'); return; }
+    const playerColl = {}, playerDocs = {};
+    lobby.forEach(p => { const c = collById(p.collId); playerColl[p.pid] = p.collId; playerDocs[p.pid] = c ? c.docs.map(d => d.name) : []; });
+    active = { type: t, alive: lobby.map(p => p.pid), eliminated: [], playerColl, playerDocs }; saveActive();
     document.getElementById('setupCard').style.display = 'none'; document.getElementById('gameCard').style.display = 'block'; renderActiveGame();
   }
   function eliminate(id) { active.eliminated.push(id); active.alive = active.alive.filter(p => p !== id); if (active.alive.length === 1) finishGame(); else { saveActive(); renderActiveGame(); } }
   function undoElimination() { if (!active || !active.eliminated.length) return; active.alive.push(active.eliminated.pop()); saveActive(); renderActiveGame(); }
   function finishGame() {
     const winner = active.alive[0]; const standings = [winner, ...active.eliminated.slice().reverse()];
-    games.push({ id: uid(), type: active.type, ts: Date.now(), standings, playerDocs: active.playerDocs });
+    games.push({ id: uid(), type: active.type, ts: Date.now(), standings, playerColl: active.playerColl, playerDocs: active.playerDocs });
     active = null; lobby = []; saveActive();
     document.getElementById('setupCard').style.display = 'block'; document.getElementById('gameCard').style.display = 'none'; save(); renderAll();
   }
-  function cancelGame() { if (!confirm('Cancel this game? Nothing will be recorded.')) return; active = null; saveActive(); document.getElementById('setupCard').style.display = 'block'; document.getElementById('gameCard').style.display = 'none'; }
+  function cancelGame() { if (!confirm('Cancel this game? Nothing recorded.')) return; active = null; saveActive(); document.getElementById('setupCard').style.display = 'block'; document.getElementById('gameCard').style.display = 'none'; }
   function renderActiveGame() {
     const box = document.getElementById('activeList'); const total = active.alive.length + active.eliminated.length;
     document.getElementById('gameHint').textContent = `${typeName(active.type)} · ${active.alive.length} still in · tap a player to eliminate them.`;
     document.getElementById('undoBtn').style.display = active.eliminated.length ? 'inline-block' : 'none';
     let html = '';
-    if (active.eliminated.length) html += active.eliminated.map((id, idx) => { const place = total - idx; const docs = active.playerDocs[id] || []; return `<div class="player-row eliminated"><div class="place-tag">${place}</div><div class="item-name">${esc(nameOf(id))}${docs.length ? `<div class="item-meta">${esc(docs.join(', '))}</div>` : ''}</div><span class="item-meta">out</span></div>`; }).join('');
-    html += active.alive.map(id => { const docs = active.playerDocs[id] || []; return `<div class="player-row"><div class="place-tag active">in</div><div class="item-name">${esc(nameOf(id))}${docs.length ? `<div class="item-meta">${esc(docs.join(', '))}</div>` : ''}</div><button class="danger small" onclick="eliminate('${id}')">Eliminate</button></div>`; }).join('');
+    if (active.eliminated.length) html += active.eliminated.map((id, idx) => { const place = total - idx; const cn = collName(active.playerColl[id]); return `<div class="player-row eliminated"><div class="place-tag">${place}</div><div class="item-name">${esc(nameOf(id))}<div class="item-meta">${esc(cn)}</div></div><span class="item-meta">out</span></div>`; }).join('');
+    html += active.alive.map(id => { const cn = collName(active.playerColl[id]); return `<div class="player-row"><div class="place-tag active">in</div><div class="item-name">${esc(nameOf(id))}<div class="item-meta">${esc(cn)}</div></div><button class="danger small" onclick="eliminate('${id}')">Eliminate</button></div>`; }).join('');
     box.innerHTML = html;
   }
 
@@ -617,41 +624,25 @@
     renderLobby();
     const log = document.getElementById('matchLog');
     log.innerHTML = games.length ? [...games].sort((a,b)=>b.ts-a.ts).map(g => {
-      const places = g.standings.map((id, i) => { const docs = (g.playerDocs && g.playerDocs[id]) || []; return `<span class="badge ${i === 0 ? 'w' : ''}" title="${esc(docs.join(', '))}">${ordinal(i + 1)} ${esc(nameOf(id))}${docs.length ? ' (' + docs.length + ')' : ''}</span>`; }).join(' ');
+      const places = g.standings.map((id, i) => { const cn = g.playerColl && g.playerColl[id] ? collName(g.playerColl[id]) : ''; return `<span class="badge ${i === 0 ? 'w' : ''}" title="${esc(cn)}">${ordinal(i + 1)} ${esc(nameOf(id))}</span>`; }).join(' ');
       return `<div class="log-line"><div class="row" style="justify-content:space-between;margin-bottom:6px;"><div>🏆 <strong class="gold">${esc(nameOf(g.standings[0]))}</strong><span class="item-meta"> · <span class="typebadge">${esc(typeName(g.type || 'A'))}</span> · ${g.standings.length} players · ${new Date(g.ts).toLocaleDateString()}</span></div><div class="row" style="gap:6px;"><button class="ghost tiny" onclick="openEditModal('${g.id}')">Edit</button><button class="danger tiny" onclick="deleteGame('${g.id}')">Delete</button></div></div><div class="chip-row" style="margin-top:0;">${places}</div></div>`;
     }).join('') : '<div class="empty">No games recorded yet.</div>';
   }
   function deleteGame(id) { if (!confirm('Delete this game?')) return; games = games.filter(g => g.id !== id); save(); renderAll(); }
-  function resetSession() { if (!confirm('Clear ALL game history? (Collection & roster stay.)')) return; games = []; save(); renderAll(); }
-
+  function resetSession() { if (!confirm('Clear ALL game history? (Collections & roster stay.)')) return; games = []; save(); renderAll(); }
   function openEditModal(id) { const g = games.find(x => x.id === id); if (!g) return; editingGameId = id; editOrder = [...g.standings]; document.getElementById('editModal').style.display = 'block'; renderEditModal(); }
   function closeEditModal() { document.getElementById('editModal').style.display = 'none'; editingGameId = null; }
   function moveEdit(i, dir) { const j = i + dir; if (j < 0 || j >= editOrder.length) return; [editOrder[i], editOrder[j]] = [editOrder[j], editOrder[i]]; renderEditModal(); }
   function renderEditModal() { document.getElementById('editStandings').innerHTML = editOrder.map((id, i) => `<div class="player-row"><div class="place-tag ${i === 0 ? 'active' : ''}">${i + 1}</div><div class="item-name">${esc(nameOf(id))}</div><div class="ord-btns"><button onclick="moveEdit(${i},-1)" ${i === 0 ? 'disabled style="opacity:.3"' : ''}>▲</button><button onclick="moveEdit(${i},1)" ${i === editOrder.length - 1 ? 'disabled style="opacity:.3"' : ''}>▼</button></div></div>`).join(''); }
   function saveEdit() { const g = games.find(x => x.id === editingGameId); if (!g) return; g.standings = [...editOrder]; save(); closeEditModal(); renderAll(); }
 
-  // ============================================================
-  //  STATS + CHARTS
-  // ============================================================
+  // ---------- Stats + charts ----------
   function clearDates() { document.getElementById('dateFrom').value = ''; document.getElementById('dateTo').value = ''; refreshStats(); }
   function scopedGames() { const fromV = document.getElementById('dateFrom').value, toV = document.getElementById('dateTo').value; const from = fromV ? new Date(fromV + 'T00:00:00').getTime() : -Infinity; const to = toV ? new Date(toV + 'T23:59:59').getTime() : Infinity; return games.filter(g => g.ts >= from && g.ts <= to); }
-  function refreshStats() {
-    const gs = scopedGames(); const fromV = document.getElementById('dateFrom').value, toV = document.getElementById('dateTo').value;
-    document.getElementById('dateScope').textContent = `${gs.length} game${gs.length === 1 ? '' : 's'} in range` + (fromV || toV ? ` (${fromV || '…'} → ${toV || '…'})` : ' (all time)');
-    renderTypeSummary(gs); renderDocStats(gs); renderLeaderboard(); renderWinsChart(gs); renderTypeChart(gs);
-  }
-
+  function refreshStats() { const gs = scopedGames(); const fromV = document.getElementById('dateFrom').value, toV = document.getElementById('dateTo').value; document.getElementById('dateScope').textContent = `${gs.length} game${gs.length === 1 ? '' : 's'} in range` + (fromV || toV ? ` (${fromV || '…'} → ${toV || '…'})` : ' (all time)'); renderTypeSummary(gs); renderDocStats(gs); renderLeaderboard(); renderWinsChart(gs); renderTypeChart(gs); }
   const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim() || '#4da3ff';
   const palette = () => [cssVar('--accent'), cssVar('--win'), cssVar('--gold'), cssVar('--loss'), '#a78bfa', '#22d3ee', '#fb923c', '#f472b6'];
-
-  function renderTypeSummary(gs) {
-    const box = document.getElementById('typeSummary'); if (!box) return;
-    if (!gs.length) { box.innerHTML = '<div class="empty">No games in range.</div>'; return; }
-    const byType = {}; gs.forEach(g => { const t = g.type || 'A'; (byType[t] = byType[t] || []).push(g); });
-    box.innerHTML = `<table class="lb"><thead><tr><th>Type</th><th class="num">Games</th><th>Top Player</th><th class="num">Wins</th></tr></thead><tbody>${Object.keys(byType).sort().map(t => { const g2 = byType[t]; const wins = {}; g2.forEach(g => { const w = g.standings[0]; wins[w] = (wins[w] || 0) + 1; }); const top = Object.entries(wins).sort((a, b) => b[1] - a[1])[0]; return `<tr><td><strong>${esc(typeName(t))}</strong></td><td class="num">${g2.length}</td><td>${top ? '🏆 ' + esc(nameOf(top[0])) : '—'}</td><td class="num win">${top ? top[1] : 0}</td></tr>`; }).join('')}</tbody></table>`;
-  }
-
-  // Document performance with Wilson lower-bound confidence on lift
+  function renderTypeSummary(gs) { const box = document.getElementById('typeSummary'); if (!box) return; if (!gs.length) { box.innerHTML = '<div class="empty">No games in range.</div>'; return; } const byType = {}; gs.forEach(g => { const t = g.type || 'A'; (byType[t] = byType[t] || []).push(g); }); box.innerHTML = `<table class="lb"><thead><tr><th>Type</th><th class="num">Games</th><th>Top Player</th><th class="num">Wins</th></tr></thead><tbody>${Object.keys(byType).sort().map(t => { const g2 = byType[t]; const wins = {}; g2.forEach(g => { const w = g.standings[0]; wins[w] = (wins[w] || 0) + 1; }); const top = Object.entries(wins).sort((a, b) => b[1] - a[1])[0]; return `<tr><td><strong>${esc(typeName(t))}</strong></td><td class="num">${g2.length}</td><td>${top ? '🏆 ' + esc(nameOf(top[0])) : '—'}</td><td class="num win">${top ? top[1] : 0}</td></tr>`; }).join('')}</tbody></table>`; }
   function renderDocStats(gs) {
     const box = document.getElementById('docStats'); if (!box) return;
     const pStats = {}; gs.forEach(g => { const w = g.standings[0]; g.standings.forEach(id => { pStats[id] = pStats[id] || { games: 0, wins: 0 }; pStats[id].games++; if (id === w) pStats[id].wins++; }); });
@@ -659,13 +650,10 @@
     const stats = {};
     gs.forEach(g => { if (!g.playerDocs) return; const winner = g.standings[0]; Object.keys(g.playerDocs).forEach(id => { const won = id === winner ? 1 : 0; const lift = won - baseline(id); (g.playerDocs[id] || []).forEach(d => { stats[d] = stats[d] || { name: d, used: 0, wins: 0, liftSum: 0 }; stats[d].used++; stats[d].wins += won; stats[d].liftSum += lift; }); }); });
     const rows = Object.values(stats).map(s => ({ ...s, rate: s.used ? s.wins / s.used : 0, lift: s.used ? s.liftSum / s.used : 0 })).sort((a, b) => b.lift - a.lift || b.used - a.used);
-    if (!rows.length) { box.innerHTML = '<div class="empty">No documents assigned to players in this range.</div>'; return; }
-    const conf = used => used >= 8 ? 'high' : used >= 4 ? 'med' : 'low';
-    box.innerHTML = `<table class="lb"><thead><tr><th>Document</th><th class="num">Used</th><th class="num">Win %</th><th class="num">Lift</th><th>Conf.</th></tr></thead><tbody>${rows.map(r => { const pct = Math.round(r.lift * 100); const cls = pct > 0 ? 'win' : pct < 0 ? 'loss' : ''; const sign = pct > 0 ? '+' : ''; const c = conf(r.used); return `<tr class="${c === 'low' ? 'lowconf' : ''}"><td>${esc(r.name)}</td><td class="num">${r.used}</td><td class="num">${Math.round(r.rate * 100)}%</td><td class="num ${cls}">${sign}${pct} pts</td><td><span class="conf ${c}"></span> <span class="item-meta">${c}</span></td></tr>`; }).join('')}</tbody></table>
-      <div class="legend"><span><span class="legdot" style="background:var(--win)"></span>High ≥ 8 uses</span><span><span class="legdot" style="background:var(--gold)"></span>Medium 4–7</span><span><span class="legdot" style="background:var(--faint)"></span>Low &lt; 4 (dimmed — treat as noise)</span></div>
-      <div class="hint"><strong>Lift</strong> = how much better users did with the document vs. their own overall win rate. Low-confidence rows are dimmed because a few games can swing the number wildly.</div>`;
+    if (!rows.length) { box.innerHTML = '<div class="empty">No documents in games in this range.</div>'; return; }
+    const conf = u => u >= 8 ? 'high' : u >= 4 ? 'med' : 'low';
+    box.innerHTML = `<table class="lb"><thead><tr><th>Document</th><th class="num">Used</th><th class="num">Win %</th><th class="num">Lift</th><th>Conf.</th></tr></thead><tbody>${rows.map(r => { const pct = Math.round(r.lift * 100); const cls = pct > 0 ? 'win' : pct < 0 ? 'loss' : ''; const sign = pct > 0 ? '+' : ''; const c = conf(r.used); return `<tr class="${c === 'low' ? 'lowconf' : ''}"><td>${esc(r.name)}</td><td class="num">${r.used}</td><td class="num">${Math.round(r.rate * 100)}%</td><td class="num ${cls}">${sign}${pct} pts</td><td><span class="conf ${c}"></span> <span class="item-meta">${c}</span></td></tr>`; }).join('')}</tbody></table><div class="legend"><span><span class="legdot" style="background:var(--win)"></span>High ≥ 8</span><span><span class="legdot" style="background:var(--gold)"></span>Medium 4–7</span><span><span class="legdot" style="background:var(--faint)"></span>Low &lt; 4 (dimmed)</span></div><div class="hint"><strong>Lift</strong> vs. each user's own win rate. Low-confidence rows dimmed.</div>`;
   }
-
   function renderLeaderboard() {
     const filter = document.getElementById('lbFilter')?.value || 'ALL'; let gs = scopedGames(); if (filter !== 'ALL') gs = gs.filter(g => (g.type || 'A') === filter);
     const stats = {}; gs.forEach(g => g.standings.forEach((id, i) => { if (!stats[id]) stats[id] = { id, games: 0, wins: 0, placeSum: 0 }; stats[id].games++; if (i === 0) stats[id].wins++; stats[id].placeSum += (i + 1); }));
@@ -675,55 +663,24 @@
     box.innerHTML = `<div class="item-meta" style="margin-bottom:8px;">${gs.length} game${gs.length === 1 ? '' : 's'}${filter === 'ALL' ? '' : ' · ' + typeName(filter)}</div><table class="lb"><thead><tr><th>#</th><th>Player</th><th class="num">Games</th><th class="num">Wins</th><th class="num">Win %</th><th class="num">Avg Finish</th></tr></thead><tbody>${rows.map((r, i) => `<tr><td>${i + 1}</td><td>${i === 0 ? '🏆 ' : ''}${esc(nameOf(r.id))}</td><td class="num">${r.games}</td><td class="num win">${r.wins}</td><td class="num">${Math.round(r.winRate * 100)}%</td><td class="num">${r.avgFinish.toFixed(2)}</td></tr>`).join('')}</tbody></table>`;
     renderLeaderChart(rows.slice(0, 8));
   }
-
-  // ----- Charts (hand-rolled SVG/HTML, no libraries) -----
   function renderWinsChart(gs) {
-    const box = document.getElementById('chartWins');
-    if (gs.length < 2) { box.innerHTML = '<div class="empty">Need at least 2 games to chart a trend.</div>'; return; }
-    // cumulative wins per player over time, top 5 by total wins
-    const sorted = [...gs].sort((a, b) => a.ts - b.ts);
-    const totals = {}; sorted.forEach(g => { const w = g.standings[0]; totals[w] = (totals[w] || 0) + 1; });
-    const top = Object.entries(totals).sort((a, b) => b[1] - a[1]).slice(0, 5).map(e => e[0]);
-    const series = {}; top.forEach(id => series[id] = []); const run = {}; top.forEach(id => run[id] = 0);
-    sorted.forEach((g, i) => { const w = g.standings[0]; if (run[w] !== undefined) run[w]++; top.forEach(id => series[id].push(run[id])); });
-    const n = sorted.length, maxY = Math.max(1, ...top.map(id => run[id]));
-    const W = 600, H = 120, padL = 24, padB = 16, padT = 8, padR = 8;
-    const x = i => padL + (i / (n - 1)) * (W - padL - padR);
-    const y = v => padT + (1 - v / maxY) * (H - padT - padB);
-    const cols = palette();
-    const lines = top.map((id, k) => { const pts = series[id].map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' '); return `<polyline fill="none" stroke="${cols[k % cols.length]}" stroke-width="2" points="${pts}"/>`; }).join('');
+    const box = document.getElementById('chartWins'); if (gs.length < 2) { box.innerHTML = '<div class="empty">Need at least 2 games to chart a trend.</div>'; return; }
+    const sorted = [...gs].sort((a, b) => a.ts - b.ts); const totals = {}; sorted.forEach(g => { const w = g.standings[0]; totals[w] = (totals[w] || 0) + 1; });
+    const top = Object.entries(totals).sort((a, b) => b[1] - a[1]).slice(0, 5).map(e => e[0]); const series = {}; const run = {}; top.forEach(id => { series[id] = []; run[id] = 0; });
+    sorted.forEach(g => { const w = g.standings[0]; if (run[w] !== undefined) run[w]++; top.forEach(id => series[id].push(run[id])); });
+    const n = sorted.length, maxY = Math.max(1, ...top.map(id => run[id])); const W = 600, H = 120, padL = 24, padB = 16, padT = 8, padR = 8;
+    const x = i => padL + (i / (n - 1)) * (W - padL - padR); const y = v => padT + (1 - v / maxY) * (H - padT - padB); const cols = palette();
+    const lines = top.map((id, k) => `<polyline fill="none" stroke="${cols[k % cols.length]}" stroke-width="2" points="${series[id].map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ')}"/>`).join('');
     const yticks = [0, Math.ceil(maxY / 2), maxY].map(v => `<text x="0" y="${(y(v)+3).toFixed(1)}" font-size="9" fill="${cssVar('--muted')}">${v}</text><line x1="${padL}" x2="${W-padR}" y1="${y(v)}" y2="${y(v)}" stroke="${cssVar('--border')}" stroke-width="1"/>`).join('');
     box.innerHTML = `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${yticks}${lines}</svg><div class="legend">${top.map((id, k) => `<span><span class="legdot" style="background:${cols[k % cols.length]}"></span>${esc(nameOf(id))} (${run[id]})</span>`).join('')}</div>`;
   }
-
-  function renderTypeChart(gs) {
-    const box = document.getElementById('chartTypes'); if (!gs.length) { box.innerHTML = ''; return; }
-    const byType = {}; gs.forEach(g => { const t = g.type || 'A'; byType[t] = (byType[t] || 0) + 1; });
-    const entries = Object.keys(byType).sort().map(t => [typeName(t), byType[t]]); const max = Math.max(...entries.map(e => e[1]));
-    box.innerHTML = entries.map(([lbl, v]) => `<div class="barwrap"><span class="barlbl">${esc(lbl)}</span><div class="bartrack"><div class="barfill" style="width:${(v / max * 100).toFixed(1)}%"></div></div><span class="barval">${v}</span></div>`).join('');
-  }
-
-  function renderLeaderChart(rows) {
-    const box = document.getElementById('chartLeader'); if (!rows.length) { box.innerHTML = ''; return; }
-    const max = Math.max(...rows.map(r => r.winRate)) || 1;
-    box.innerHTML = rows.map(r => `<div class="barwrap"><span class="barlbl">${esc(nameOf(r.id))}</span><div class="bartrack"><div class="barfill" style="width:${(r.winRate / max * 100).toFixed(1)}%;background:${cssVar('--win')}"></div></div><span class="barval">${Math.round(r.winRate * 100)}%</span></div>`).join('');
-  }
+  function renderTypeChart(gs) { const box = document.getElementById('chartTypes'); if (!gs.length) { box.innerHTML = ''; return; } const byType = {}; gs.forEach(g => { const t = g.type || 'A'; byType[t] = (byType[t] || 0) + 1; }); const entries = Object.keys(byType).sort().map(t => [typeName(t), byType[t]]); const max = Math.max(...entries.map(e => e[1])); box.innerHTML = entries.map(([lbl, v]) => `<div class="barwrap"><span class="barlbl">${esc(lbl)}</span><div class="bartrack"><div class="barfill" style="width:${(v / max * 100).toFixed(1)}%"></div></div><span class="barval">${v}</span></div>`).join(''); }
+  function renderLeaderChart(rows) { const box = document.getElementById('chartLeader'); if (!rows.length) { box.innerHTML = ''; return; } const max = Math.max(...rows.map(r => r.winRate)) || 1; box.innerHTML = rows.map(r => `<div class="barwrap"><span class="barlbl">${esc(nameOf(r.id))}</span><div class="bartrack"><div class="barfill" style="width:${(r.winRate / max * 100).toFixed(1)}%;background:${cssVar('--win')}"></div></div><span class="barval">${Math.round(r.winRate * 100)}%</span></div>`).join(''); }
 
   // ---------- CSV / JSON ----------
-  function exportCSV() {
-    const gs = scopedGames(); if (!gs.length) { alert('No games in range to export.'); return; }
-    const rows = [['Date', 'Game Type', 'Type Label', 'Players', 'Place', 'Player', 'Player ID', 'Documents Used']];
-    gs.forEach(g => { const date = new Date(g.ts).toISOString().slice(0, 10); g.standings.forEach((id, i) => { const docs = ((g.playerDocs && g.playerDocs[id]) || []).join('; '); rows.push([date, g.type || 'A', typeName(g.type || 'A'), g.standings.length, i + 1, nameOf(id), id, docs]); }); });
-    const csv = rows.map(r => r.map(c => { const s = String(c); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }).join(',')).join('\n');
-    downloadBlob(csv, 'text/csv;charset=utf-8;', 'game-history-' + new Date().toISOString().slice(0, 10) + '.csv');
-  }
-  function exportJSON() { downloadBlob(JSON.stringify({ version: 4, exported: new Date().toISOString(), ...snapshot() }, null, 2), 'application/json', 'tracker-backup-' + new Date().toISOString().slice(0, 10) + '.json'); }
-  function importJSON(ev) {
-    const file = ev.target.files[0]; const status = document.getElementById('backupStatus'); if (!file) return;
-    const reader = new FileReader();
-    reader.onload = e => { try { const d = JSON.parse(e.target.result); if (!d.collection && !d.games && !d.players) throw new Error('Unrecognized file'); if (!confirm('This will REPLACE your current data. Continue?')) return; applyState(d, false); applyTheme(); save(); renderAll(); status.innerHTML = `<span class="win">Restored ${collection.length} documents, ${games.length} games, ${players.length} players.</span>`; } catch (err) { status.innerHTML = '<span class="loss">Import failed: not a valid backup file.</span>'; } };
-    reader.readAsText(file); ev.target.value = '';
-  }
+  function exportCSV() { const gs = scopedGames(); if (!gs.length) { alert('No games in range.'); return; } const rows = [['Date', 'Game Type', 'Type Label', 'Players', 'Place', 'Player', 'Player ID', 'Collection', 'Documents']]; gs.forEach(g => { const date = new Date(g.ts).toISOString().slice(0, 10); g.standings.forEach((id, i) => { const cn = g.playerColl && g.playerColl[id] ? collName(g.playerColl[id]) : ''; const docs = ((g.playerDocs && g.playerDocs[id]) || []).join('; '); rows.push([date, g.type || 'A', typeName(g.type || 'A'), g.standings.length, i + 1, nameOf(id), id, cn, docs]); }); }); const csv = rows.map(r => r.map(c => { const s = String(c); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }).join(',')).join('\n'); downloadBlob(csv, 'text/csv;charset=utf-8;', 'game-history-' + new Date().toISOString().slice(0, 10) + '.csv'); }
+  function exportJSON() { downloadBlob(JSON.stringify({ version: 5, exported: new Date().toISOString(), ...snapshot() }, null, 2), 'application/json', 'tracker-backup-' + new Date().toISOString().slice(0, 10) + '.json'); }
+  function importJSON(ev) { const file = ev.target.files[0]; const status = document.getElementById('backupStatus'); if (!file) return; const reader = new FileReader(); reader.onload = e => { try { const d = JSON.parse(e.target.result); if (!d.collections && !d.collection && !d.games) throw new Error('Unrecognized'); if (!confirm('This will REPLACE your current data. Continue?')) return; applyState(d, false); if (!collections.length) collections = [{ id: cid(), name: 'Main', type: 'A', docs: [] }]; activeCollId = collections[0].id; applyTheme(); save(); renderAll(); status.innerHTML = `<span class="win">Restored ${collections.length} collections, ${games.length} games, ${players.length} players.</span>`; } catch (err) { status.innerHTML = '<span class="loss">Import failed: not a valid backup.</span>'; } }; reader.readAsText(file); ev.target.value = ''; }
   function downloadBlob(content, type, filename) { const blob = new Blob([content], { type }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); }
 
   function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
