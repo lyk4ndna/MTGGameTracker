@@ -1,0 +1,736 @@
+<style>
+  :root {
+    --bg: #0f1419; --panel: #1a212b; --field: #0f1419; --border: #2a3038;
+    --text: #e6e9ed; --muted: #8a93a0; --faint: #6a737d;
+    --accent: #4da3ff; --accent-hover: #6cb4ff; --accent-ink: #08111c;
+    --win: #5fd97f; --loss: #ff7a7a; --gold: #ffce5c;
+    --chip-active-bg: #16331f; --type-bg: #1d2b3a;
+  }
+  [data-theme="light"] {
+    --bg: #f5f7fa; --panel: #ffffff; --field: #ffffff; --border: #d8dee6;
+    --text: #1a2230; --muted: #5a6573; --faint: #8a94a2;
+    --accent: #2563eb; --accent-hover: #1d4ed8; --accent-ink: #ffffff;
+    --win: #1a8f47; --loss: #d83a3a; --gold: #b8860b;
+    --chip-active-bg: #dff5e5; --type-bg: #e3edfb;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); padding: 16px; max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
+  .topbar { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+  .topbar .row { flex: none; }
+  .tabs { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  .tab { padding: 10px 16px; cursor: pointer; color: var(--muted); border-bottom: 2px solid transparent; font-size: 14px; font-weight: 600; }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .panel { display: none; } .panel.active { display: block; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 14px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  input, select, textarea { background: var(--field); border: 1px solid var(--border); color: var(--text); padding: 9px 11px; border-radius: 7px; font-size: 14px; flex: 1; min-width: 0; }
+  button { background: var(--accent); color: var(--accent-ink); border: none; padding: 9px 14px; border-radius: 7px; font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  button:hover { background: var(--accent-hover); }
+  button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+  button.ghost:hover { color: var(--text); border-color: var(--accent); }
+  button.danger { background: var(--border); color: var(--loss); }
+  button.small { padding: 6px 11px; font-size: 13px; }
+  button.tiny { padding: 4px 9px; font-size: 12px; }
+  .results { margin-top: 12px; display: grid; gap: 8px; }
+  .result-item, .coll-item { display: flex; align-items: center; gap: 10px; background: var(--field); border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
+  .thumb { width: 34px; height: 48px; object-fit: cover; border-radius: 4px; flex-shrink: 0; background: var(--border); display:flex; align-items:center; justify-content:center; font-size:18px; color:var(--faint); }
+  .item-name { flex: 1; font-size: 14px; }
+  .item-meta { font-size: 12px; color: var(--muted); }
+  .empty { color: var(--faint); font-size: 13px; padding: 8px 0; font-style: italic; }
+  .stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
+  .stat { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px; text-align: center; }
+  .stat .num { font-size: 28px; font-weight: 700; }
+  .stat .lbl { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .win { color: var(--win); } .loss { color: var(--loss); } .neutral { color: var(--accent); } .gold { color: var(--gold); }
+  .badge { font-size: 11px; padding: 2px 7px; border-radius: 20px; background: var(--border); color: var(--muted); }
+  .badge.w { background: var(--chip-active-bg); color: var(--win); }
+  label.lbl-inline { font-size: 12px; color: var(--muted); display: block; margin-bottom: 4px; }
+  .chip-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .chip { font-size: 12px; background: var(--field); border: 1px solid var(--border); padding: 4px 10px; border-radius: 20px; cursor: pointer; }
+  .chip.sel { border-color: var(--accent); color: var(--accent); }
+  .session-log { font-size: 13px; }
+  .log-line { padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .log-line:last-child { border: none; }
+  .hint { font-size: 12px; color: var(--faint); margin-top: 6px; }
+  .spinner { color: var(--muted); font-size: 13px; }
+  .player-row { display: flex; align-items: center; gap: 10px; background: var(--field); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
+  .player-row.eliminated { opacity: 0.55; }
+  .place-tag { width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; background: var(--border); color: var(--muted); flex-shrink: 0; }
+  .place-tag.active { background: var(--chip-active-bg); color: var(--win); }
+  .ord-btns { display: flex; flex-direction: column; gap: 2px; }
+  .ord-btns button { padding: 1px 7px; font-size: 11px; line-height: 1.3; background: var(--border); color: var(--muted); }
+  table.lb { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.lb th, table.lb td { text-align: left; padding: 9px 8px; border-bottom: 1px solid var(--border); }
+  table.lb th { color: var(--muted); font-size: 12px; font-weight: 600; }
+  table.lb td.num, table.lb th.num { text-align: right; }
+  .typebadge { display:inline-block; font-size:11px; padding:2px 8px; border-radius:20px; background:var(--type-bg); color:var(--accent); }
+  .player-setup { background: var(--field); border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:8px; }
+  .player-setup .phead { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+  .doc-count { font-size:11px; color:var(--muted); }
+  .modal-bg { display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:50; padding:16px; overflow:auto; }
+  .modal { max-width:600px; margin:40px auto; background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:16px; }
+  .roster-pick { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+  .pid { font-size:10px; color:var(--faint); font-family:monospace; }
+  .conf { display:inline-block; width:8px; height:8px; border-radius:50%; margin-left:6px; vertical-align:middle; }
+  .conf.high { background: var(--win); } .conf.med { background: var(--gold); } .conf.low { background: var(--faint); }
+  .lowconf { opacity: .55; }
+  .syncdot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:6px; background: var(--faint); }
+  .syncdot.on { background: var(--win); } .syncdot.err { background: var(--loss); } .syncdot.busy { background: var(--gold); }
+  .barwrap { display:flex; align-items:center; gap:8px; margin:4px 0; font-size:12px; }
+  .barlbl { width:120px; flex:none; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--text); }
+  .bartrack { flex:1; background:var(--field); border:1px solid var(--border); border-radius:5px; height:18px; overflow:hidden; }
+  .barfill { height:100%; background:var(--accent); }
+  .barval { width:56px; flex:none; text-align:right; color:var(--muted); }
+  svg.spark { display:block; width:100%; height:120px; }
+  .legend { display:flex; gap:12px; flex-wrap:wrap; font-size:11px; color:var(--muted); margin-top:6px; }
+  .legdot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:4px; vertical-align:middle; }
+</style>
+
+<div class="topbar">
+  <div>
+    <h1>Win/Loss + Inventory Tracker</h1>
+    <div class="sub">Collaborative multiplayer tracker — shared via Supabase, with charts and confidence-weighted stats.</div>
+  </div>
+  <div class="row" style="gap:6px;">
+    <span class="item-meta" id="syncLabel" title="Sync status"><span class="syncdot" id="syncDot"></span>Offline</span>
+    <button class="ghost small" id="themeBtn" onclick="toggleTheme()">🌙</button>
+  </div>
+</div>
+
+<div class="tabs">
+  <div class="tab active" data-tab="browse">Browse</div>
+  <div class="tab" data-tab="collection">Collection</div>
+  <div class="tab" data-tab="session">Session</div>
+  <div class="tab" data-tab="stats">Stats</div>
+  <div class="tab" data-tab="settings">Settings</div>
+</div>
+
+<!-- BROWSE -->
+<div class="panel active" id="browse">
+  <div class="card">
+    <div class="row">
+      <input id="searchInput" placeholder="Search documents from the API..." onkeydown="if(event.key==='Enter')doSearch()">
+      <button onclick="doSearch()">Search</button>
+    </div>
+    <div class="hint">Demo source: Scryfall API. Swap the endpoints in the API section for your own.</div>
+    <div class="results" id="searchResults"></div>
+  </div>
+  <div class="card">
+    <label class="lbl-inline"><strong>Bulk add</strong> — one name per line, single batched call. Duplicate lines ignored.</label>
+    <textarea id="bulkInput" placeholder="Sol Ring&#10;Lightning Bolt&#10;Counterspell" style="min-height:110px;width:100%;font-family:inherit;resize:vertical;"></textarea>
+    <div class="row" style="margin-top:10px;">
+      <button onclick="bulkImport()">Import All</button>
+      <button class="ghost" onclick="document.getElementById('bulkInput').value=''">Clear</button>
+    </div>
+    <div class="hint" id="bulkStatus"></div>
+    <div class="results" id="bulkResults"></div>
+  </div>
+  <div class="card">
+    <label class="lbl-inline"><strong>Manual add</strong> — add a document by hand if the API can't find it.</label>
+    <div class="row">
+      <input id="manualName" placeholder="Document name">
+      <input id="manualMeta" placeholder="Type / note (optional)" style="flex:.7;">
+      <button onclick="manualAdd()">Add</button>
+    </div>
+  </div>
+</div>
+
+<!-- COLLECTION -->
+<div class="panel" id="collection">
+  <div class="card">
+    <div class="row" style="justify-content: space-between;">
+      <strong>Saved Collection (<span id="collCount">0</span>)</strong>
+      <button class="danger small" onclick="clearCollection()">Clear All</button>
+    </div>
+    <input id="collSearch" placeholder="Filter collection..." style="margin-top:12px;width:100%;" oninput="renderCollection()">
+    <div class="results" id="collectionList"></div>
+  </div>
+</div>
+
+<!-- SESSION -->
+<div class="panel" id="session">
+  <div class="stat-grid">
+    <div class="stat"><div class="num gold" id="statGames">0</div><div class="lbl">Games Played</div></div>
+    <div class="stat"><div class="num win" id="statPlayers">0</div><div class="lbl">Players in Roster</div></div>
+    <div class="stat"><div class="num neutral" id="statAvg">—</div><div class="lbl">Avg Field Size</div></div>
+  </div>
+  <div class="card" id="setupCard">
+    <strong>New Game</strong>
+    <div class="hint" style="margin-top:2px;">Pick players from your roster, or type a new name. Assign each one's documents, then start.</div>
+    <label class="lbl-inline" style="margin-top:12px;">Game Type</label>
+    <select id="gameType" style="flex:none;width:100%;"></select>
+    <label class="lbl-inline" style="margin-top:12px;">Add player</label>
+    <div class="row">
+      <input id="newPlayer" placeholder="Type a new player name to create + add" onkeydown="if(event.key==='Enter')addPlayerByName()">
+      <button onclick="addPlayerByName()">Create &amp; Add</button>
+    </div>
+    <div class="roster-pick" id="rosterPick"></div>
+    <div id="lobbyList" style="margin-top:12px;"></div>
+    <div class="row" style="margin-top:14px;">
+      <button onclick="startGame()" style="background:#1f7a3a;color:#dfffe8;">Start Game</button>
+    </div>
+  </div>
+  <div class="card" id="gameCard" style="display:none;">
+    <div class="row" style="justify-content:space-between;">
+      <strong>Game in progress</strong>
+      <div class="row" style="gap:6px;">
+        <button class="ghost small" id="undoBtn" onclick="undoElimination()">Undo</button>
+        <button class="ghost small" onclick="cancelGame()">Cancel</button>
+      </div>
+    </div>
+    <div class="hint" style="margin-top:2px;" id="gameHint"></div>
+    <div id="activeList" style="margin-top:12px;"></div>
+  </div>
+  <div class="card">
+    <div class="row" style="justify-content: space-between;">
+      <strong>Game History</strong>
+      <button class="ghost small" onclick="resetSession()">Reset History</button>
+    </div>
+    <div class="session-log" id="matchLog"></div>
+  </div>
+</div>
+
+<!-- STATS -->
+<div class="panel" id="stats">
+  <div class="card">
+    <strong>Date Range</strong>
+    <div class="row" style="margin-top:10px;">
+      <input type="date" id="dateFrom" onchange="refreshStats()">
+      <span class="item-meta" style="flex:none;">to</span>
+      <input type="date" id="dateTo" onchange="refreshStats()">
+      <button class="ghost small" onclick="clearDates()">All time</button>
+    </div>
+    <div class="hint" id="dateScope"></div>
+  </div>
+  <div class="card">
+    <strong>Wins Over Time</strong>
+    <div id="chartWins" style="margin-top:10px;"></div>
+  </div>
+  <div class="card">
+    <div class="row" style="justify-content: space-between;">
+      <strong>Per-Type Summary</strong>
+      <button class="ghost small" onclick="exportCSV()">Export CSV</button>
+    </div>
+    <div id="typeSummary" style="margin-top:10px;"></div>
+    <div id="chartTypes" style="margin-top:12px;"></div>
+  </div>
+  <div class="card">
+    <div class="row" style="justify-content: space-between;">
+      <strong>Document Performance</strong>
+      <span class="item-meta">lift, confidence-weighted</span>
+    </div>
+    <div id="docStats" style="margin-top:10px;"></div>
+  </div>
+  <div class="card">
+    <div class="row" style="justify-content: space-between;">
+      <strong>Player Leaderboard</strong>
+      <span class="item-meta">sorted by win rate</span>
+    </div>
+    <label class="lbl-inline" style="margin-top:12px;">Filter by game type</label>
+    <select id="lbFilter" style="flex:none;width:100%;" onchange="renderLeaderboard()"></select>
+    <div id="leaderboard" style="margin-top:12px;"></div>
+    <div id="chartLeader" style="margin-top:12px;"></div>
+  </div>
+</div>
+
+<!-- SETTINGS -->
+<div class="panel" id="settings">
+  <div class="card">
+    <strong>Cloud Sync (Supabase)</strong>
+    <div class="hint" style="margin-top:2px;">Share one dataset across devices and people. Everyone who enters the same credentials + workspace code reads and writes the same data. Changes sync automatically. Conflict rule: last write wins.</div>
+    <label class="lbl-inline" style="margin-top:12px;">Supabase URL</label>
+    <input id="sbUrl" placeholder="https://xxxx.supabase.co">
+    <label class="lbl-inline" style="margin-top:10px;">Supabase anon key</label>
+    <input id="sbKey" placeholder="eyJ... (public anon key)">
+    <label class="lbl-inline" style="margin-top:10px;">Workspace code (shared secret your group agrees on)</label>
+    <input id="sbWorkspace" placeholder="e.g. friday-night-crew">
+    <div class="row" style="margin-top:12px;">
+      <button onclick="connectSync()">Connect &amp; Sync</button>
+      <button class="ghost" onclick="disconnectSync()">Disconnect</button>
+    </div>
+    <div class="hint" id="syncStatus"></div>
+    <div class="hint" id="sbSetup" style="margin-top:10px;"></div>
+  </div>
+  <div class="card">
+    <strong>Player Roster</strong>
+    <div class="hint" style="margin-top:2px;">Each player has a permanent ID. Renaming changes only the display name. Players with game history can't be deleted.</div>
+    <div class="row" style="margin-top:12px;">
+      <input id="rosterNew" placeholder="New player name" onkeydown="if(event.key==='Enter')rosterAdd()">
+      <button onclick="rosterAdd()">Add</button>
+    </div>
+    <div id="rosterList" style="margin-top:12px;"></div>
+  </div>
+  <div class="card">
+    <strong>Game Type Labels</strong>
+    <div id="typeLabels" style="margin-top:12px;"></div>
+    <button class="small" style="margin-top:10px;" onclick="saveTypeLabels()">Save Labels</button>
+    <span class="item-meta" id="labelSaved" style="margin-left:8px;"></span>
+  </div>
+  <div class="card">
+    <strong>Backup &amp; Restore</strong>
+    <div class="row" style="margin-top:12px;">
+      <button onclick="exportJSON()">Export Backup (JSON)</button>
+      <button class="ghost" onclick="document.getElementById('importFile').click()">Import Backup</button>
+      <input type="file" id="importFile" accept="application/json" style="display:none" onchange="importJSON(event)">
+    </div>
+    <div class="hint" id="backupStatus"></div>
+  </div>
+</div>
+
+<!-- modals -->
+<div id="docModal" class="modal-bg"><div class="modal">
+  <div class="row" style="justify-content:space-between;"><strong id="docModalTitle">Assign Documents</strong><button class="ghost small" onclick="closeDocModal()">Done</button></div>
+  <input id="docModalSearch" placeholder="Filter..." style="margin-top:12px;width:100%;" oninput="renderDocModal()">
+  <div class="chip-row" id="docModalChips" style="margin-top:12px;"></div>
+</div></div>
+<div id="editModal" class="modal-bg"><div class="modal">
+  <div class="row" style="justify-content:space-between;"><strong>Edit Game</strong><button class="ghost small" onclick="closeEditModal()">Close</button></div>
+  <div class="hint">Reorder the finishing positions (1st at top).</div>
+  <div id="editStandings" style="margin-top:12px;"></div>
+  <div class="row" style="margin-top:12px;"><button onclick="saveEdit()">Save Changes</button></div>
+</div></div>
+
+<script>
+  // ============================================================
+  //  STATE
+  // ============================================================
+  let collection = [];
+  let players = [];      // {id, name}
+  let games = [];        // {id, type, ts, standings:[pid], playerDocs:{pid:[docNames]}}
+  let typeLabels = { A: 'Game Type A', B: 'Game Type B', C: 'Game Type C', D: 'Game Type D' };
+  let theme = 'dark';
+
+  let lobby = [];
+  let active = null;
+  let modalPlayerIdx = null, editingGameId = null, editOrder = [];
+
+  const STORAGE_KEY = 'tracker-data';
+  const ACTIVE_KEY = 'tracker-active';
+  const SYNC_KEY = 'tracker-sync-cfg';
+  const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  const pid = () => 'p_' + uid();
+
+  // ---------- Sync config / runtime ----------
+  let sync = { url: '', key: '', workspace: '', connected: false };
+  let syncTimer = null, pollTimer = null, pushing = false, lastPushedHash = '', suppressPush = false;
+
+  function loadSyncCfg() { try { const c = JSON.parse(localStorage.getItem(SYNC_KEY)); if (c) sync = { ...sync, ...c, connected: false }; } catch (e) {} }
+  function saveSyncCfg() { try { localStorage.setItem(SYNC_KEY, JSON.stringify({ url: sync.url, key: sync.key, workspace: sync.workspace })); } catch (e) {} }
+
+  // ============================================================
+  //  PERSISTENCE
+  // ============================================================
+  function snapshot() { return { collection, players, games, typeLabels, theme }; }
+  function save() {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot())); } catch (e) { console.error(e); }
+    if (sync.connected && !suppressPush) schedulePush();
+  }
+  function saveActive() { try { if (active) localStorage.setItem(ACTIVE_KEY, JSON.stringify(active)); else localStorage.removeItem(ACTIVE_KEY); } catch (e) {} }
+
+  const playerById = id => players.find(p => p.id === id);
+  const nameOf = id => { const p = playerById(id); return p ? p.name : '(unknown)'; };
+  function ensurePlayerByName(name) { const e = players.find(p => p.name.toLowerCase() === name.toLowerCase()); if (e) return e.id; const np = { id: pid(), name }; players.push(np); return np.id; }
+
+  function load() {
+    loadSyncCfg();
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const d = JSON.parse(raw);
+        applyState(d, false);
+      }
+    } catch (e) {}
+    applyTheme();
+    // reflect saved sync creds into the form
+    document.getElementById('sbUrl').value = sync.url || '';
+    document.getElementById('sbKey').value = sync.key || '';
+    document.getElementById('sbWorkspace').value = sync.workspace || '';
+    renderSetupGuide();
+    try { const a = localStorage.getItem(ACTIVE_KEY); if (a) active = JSON.parse(a); } catch (e) {}
+    renderAll();
+    if (active) { document.getElementById('setupCard').style.display = 'none'; document.getElementById('gameCard').style.display = 'block'; renderActiveGame(); }
+    if (sync.url && sync.key && sync.workspace) connectSync(true);
+  }
+  function applyState(d, fromCloud) {
+    collection = d.collection || [];
+    if (d.typeLabels) typeLabels = { A:'Game Type A',B:'Game Type B',C:'Game Type C',D:'Game Type D', ...d.typeLabels };
+    if (!fromCloud && d.theme) theme = d.theme;
+    if (d.players) { players = d.players; games = (d.games || []).map(g => ({ playerDocs: {}, ...g })); }
+    else migrateFromNames(d);
+  }
+  function migrateFromNames(d) {
+    const byName = {};
+    const getId = name => { const k = name.toLowerCase(); if (!byName[k]) byName[k] = { id: pid(), name }; return byName[k].id; };
+    (d.roster || []).forEach(getId);
+    games = (d.games || d.matches || []).map(g => {
+      const standings = (g.standings || []).map(getId); const playerDocs = {};
+      if (g.playerDocs) Object.keys(g.playerDocs).forEach(nm => playerDocs[getId(nm)] = g.playerDocs[nm]);
+      else if (g.docs && g.docs.length && standings[0]) playerDocs[standings[0]] = g.docs;
+      return { id: g.id || uid(), type: g.type || 'A', ts: g.ts || Date.now(), standings, playerDocs };
+    });
+    players = Object.values(byName);
+  }
+  function renderAll() { populateTypeSelects(); renderCollection(); renderSession(); renderRosterPick(); refreshStats(); renderTypeLabelInputs(); renderRosterList(); }
+
+  function applyTheme() { document.documentElement.setAttribute('data-theme', theme); document.getElementById('themeBtn').textContent = theme === 'dark' ? '🌙' : '☀️'; }
+  function toggleTheme() { theme = theme === 'dark' ? 'light' : 'dark'; applyTheme(); save(); }
+
+  // ============================================================
+  //  CLOUD SYNC (Supabase REST — no SDK needed)
+  //  Table: workspaces (code text primary key, data jsonb, updated_at timestamptz)
+  // ============================================================
+  function setSyncUI(state, text) {
+    const dot = document.getElementById('syncDot'), lbl = document.getElementById('syncLabel');
+    dot.className = 'syncdot ' + (state || '');
+    lbl.innerHTML = `<span class="syncdot ${state || ''}" id="syncDot"></span>${text}`;
+  }
+  function sbHeaders() { return { 'apikey': sync.key, 'Authorization': 'Bearer ' + sync.key, 'Content-Type': 'application/json' }; }
+  function hashState() { try { return JSON.stringify({ collection, players, games, typeLabels }).length + ':' + (games.length) + ':' + (players.length) + ':' + (collection.length); } catch (e) { return Math.random() + ''; } }
+
+  async function connectSync(silent) {
+    sync.url = document.getElementById('sbUrl').value.trim().replace(/\/$/, '');
+    sync.key = document.getElementById('sbKey').value.trim();
+    sync.workspace = document.getElementById('sbWorkspace').value.trim();
+    const status = document.getElementById('syncStatus');
+    if (!sync.url || !sync.key || !sync.workspace) { if (!silent) status.innerHTML = '<span class="loss">Fill in URL, key, and workspace code.</span>'; return; }
+    saveSyncCfg();
+    setSyncUI('busy', 'Connecting…');
+    try {
+      // Try to fetch existing workspace row
+      const res = await fetch(`${sync.url}/rest/v1/workspaces?code=eq.${encodeURIComponent(sync.workspace)}&select=data,updated_at`, { headers: sbHeaders() });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const rows = await res.json();
+      sync.connected = true;
+      if (rows.length && rows[0].data) {
+        // pull remote into local
+        suppressPush = true; applyState(rows[0].data, true); suppressPush = false;
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot())); } catch (e) {}
+        renderAll();
+        status.innerHTML = '<span class="win">Connected. Pulled shared data.</span>';
+      } else {
+        // create the row with our current data
+        await pushNow(true);
+        status.innerHTML = '<span class="win">Connected. Created new shared workspace from your data.</span>';
+      }
+      lastPushedHash = hashState();
+      setSyncUI('on', 'Synced');
+      startPolling();
+    } catch (e) {
+      sync.connected = false; setSyncUI('err', 'Sync error');
+      status.innerHTML = `<span class="loss">Couldn't connect: ${esc(e.message)}.</span> Check the credentials and that the <code>workspaces</code> table exists (setup steps below).`;
+    }
+  }
+  function disconnectSync() {
+    sync.connected = false; if (pollTimer) clearInterval(pollTimer); if (syncTimer) clearTimeout(syncTimer);
+    setSyncUI('', 'Offline'); document.getElementById('syncStatus').textContent = 'Disconnected. Data stays on this device.';
+  }
+  function schedulePush() { if (syncTimer) clearTimeout(syncTimer); syncTimer = setTimeout(() => pushNow(false), 800); }
+  async function pushNow(initial) {
+    if (!sync.connected && !initial) return;
+    if (pushing) { schedulePush(); return; }
+    pushing = true; setSyncUI('busy', 'Saving…');
+    try {
+      const body = [{ code: sync.workspace, data: snapshot(), updated_at: new Date().toISOString() }];
+      const res = await fetch(`${sync.url}/rest/v1/workspaces?on_conflict=code`, {
+        method: 'POST', headers: { ...sbHeaders(), 'Prefer': 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(body)
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      lastPushedHash = hashState();
+      setSyncUI('on', 'Synced');
+    } catch (e) { setSyncUI('err', 'Save failed'); }
+    pushing = false;
+  }
+  function startPolling() {
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(async () => {
+      if (!sync.connected || pushing) return;
+      try {
+        const res = await fetch(`${sync.url}/rest/v1/workspaces?code=eq.${encodeURIComponent(sync.workspace)}&select=data`, { headers: sbHeaders() });
+        if (!res.ok) return;
+        const rows = await res.json();
+        if (rows.length && rows[0].data) {
+          const remote = rows[0].data;
+          const remoteHash = JSON.stringify({ collection: remote.collection, players: remote.players, games: remote.games, typeLabels: remote.typeLabels }).length + ':' + (remote.games||[]).length + ':' + (remote.players||[]).length + ':' + (remote.collection||[]).length;
+          if (remoteHash !== hashState() && remoteHash !== lastPushedHash) {
+            suppressPush = true; applyState(remote, true); suppressPush = false;
+            try { localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot())); } catch (e) {}
+            renderAll();
+            setSyncUI('on', 'Synced (updated)');
+          }
+        }
+      } catch (e) {}
+    }, 5000);
+  }
+  function renderSetupGuide() {
+    document.getElementById('sbSetup').innerHTML =
+      `<strong>One-time Supabase setup:</strong> 1) Create a free project at supabase.com. 2) In the SQL editor run:
+      <br><code>create table workspaces (code text primary key, data jsonb, updated_at timestamptz);</code>
+      <br><code>alter table workspaces enable row level security;</code>
+      <br><code>create policy "anon all" on workspaces for all using (true) with check (true);</code>
+      <br>3) Settings → API: copy the Project URL and the <em>anon public</em> key into the fields above. Share those two values + a workspace code with your group. <em>(The anon key is safe for client use with the policy above; anyone with it and the code can read/write this table, so use a non-obvious workspace code.)</em>`;
+  }
+
+  // ============================================================
+  //  API — replace this section for your own document service
+  // ============================================================
+  async function fetchFromAPI(query) {
+    const res = await fetch('https://api.scryfall.com/cards/search?q=' + encodeURIComponent(query));
+    if (!res.ok) throw new Error('No results');
+    const json = await res.json();
+    return (json.data || []).slice(0, 12).map(mapItem);
+  }
+  async function fetchManyByName(names) {
+    const found = [], notFound = [];
+    for (let i = 0; i < names.length; i += 75) {
+      const chunk = names.slice(i, i + 75);
+      const res = await fetch('https://api.scryfall.com/cards/collection', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifiers: chunk.map(n => ({ name: n })) }) });
+      if (!res.ok) { chunk.forEach(n => notFound.push(n)); continue; }
+      const json = await res.json();
+      (json.data || []).forEach(c => found.push(mapItem(c)));
+      (json.not_found || []).forEach(nf => notFound.push(nf.name || JSON.stringify(nf)));
+      if (i + 75 < names.length) await new Promise(r => setTimeout(r, 100));
+    }
+    return { found, notFound };
+  }
+  function mapItem(c) { return { id: c.id, name: c.name, img: c.image_uris ? c.image_uris.small : (c.card_faces && c.card_faces[0].image_uris ? c.card_faces[0].image_uris.small : ''), meta: c.type_line || '' }; }
+  // ============================================================
+
+  function thumb(it) { return it.img ? `<img class="thumb" src="${it.img}" alt="" onerror="this.outerHTML='<div class=\\'thumb\\'>▢</div>'">` : `<div class="thumb">▢</div>`; }
+  async function doSearch() {
+    const q = document.getElementById('searchInput').value.trim(); const box = document.getElementById('searchResults');
+    if (!q) { box.innerHTML = '<div class="empty">Type something to search.</div>'; return; }
+    box.innerHTML = '<div class="spinner">Searching…</div>';
+    try { const items = await fetchFromAPI(q);
+      if (!items.length) { box.innerHTML = '<div class="empty">No results.</div>'; return; }
+      box.innerHTML = items.map(it => `<div class="result-item">${thumb(it)}<div class="item-name">${esc(it.name)}<div class="item-meta">${esc(it.meta)}</div></div><button onclick='addToCollection(${JSON.stringify(it).replace(/'/g, "&#39;")})'>Add</button></div>`).join('');
+    } catch (e) { box.innerHTML = '<div class="empty">Search failed. Check the API endpoint.</div>'; }
+  }
+  async function bulkImport() {
+    let names = document.getElementById('bulkInput').value.split('\n').map(s => s.trim()).filter(Boolean);
+    const seen = new Set(); names = names.filter(n => { const k = n.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+    const status = document.getElementById('bulkStatus'), box = document.getElementById('bulkResults');
+    if (!names.length) { status.textContent = 'Paste at least one name.'; return; }
+    status.textContent = `Importing ${names.length} unique name${names.length === 1 ? '' : 's'}…`; box.innerHTML = '';
+    try { const { found, notFound } = await fetchManyByName(names); let added = 0, skipped = 0;
+      found.forEach(item => { if (collection.some(c => c.id === item.id)) skipped++; else { collection.push(item); added++; } });
+      save(); renderCollection();
+      status.innerHTML = `Done — <span class="win">${added} added</span>, ${skipped} already in collection` + (notFound.length ? `, <span class="loss">${notFound.length} not found</span>` : '') + '.';
+      box.innerHTML = notFound.length ? '<div class="empty">Not found: ' + esc(notFound.join(', ')) + '</div>' : '';
+      if (added) document.getElementById('bulkInput').value = '';
+    } catch (e) { status.innerHTML = '<span class="loss">Batch import failed.</span>'; }
+  }
+  function manualAdd() {
+    const name = document.getElementById('manualName').value.trim(), meta = document.getElementById('manualMeta').value.trim(); if (!name) return;
+    if (collection.some(c => c.name.toLowerCase() === name.toLowerCase())) { alert('Already in collection.'); return; }
+    collection.push({ id: 'manual-' + uid(), name, img: '', meta });
+    document.getElementById('manualName').value = ''; document.getElementById('manualMeta').value = ''; save(); renderCollection();
+  }
+
+  function addToCollection(item) { if (collection.some(c => c.id === item.id)) return; collection.push(item); save(); renderCollection(); }
+  function removeFromCollection(id) { collection = collection.filter(c => c.id !== id); lobby.forEach(p => p.docs.delete(id)); save(); renderCollection(); renderLobby(); }
+  function clearCollection() { if (!confirm('Clear the entire collection?')) return; collection = []; lobby.forEach(p => p.docs.clear()); save(); renderCollection(); renderLobby(); }
+  function renderCollection() {
+    document.getElementById('collCount').textContent = collection.length;
+    const f = (document.getElementById('collSearch')?.value || '').trim().toLowerCase();
+    const list = f ? collection.filter(c => c.name.toLowerCase().includes(f)) : collection;
+    const box = document.getElementById('collectionList');
+    box.innerHTML = list.length ? list.map(it => `<div class="coll-item">${thumb(it)}<div class="item-name">${esc(it.name)}<div class="item-meta">${esc(it.meta)}</div></div><button class="danger small" onclick="removeFromCollection('${it.id}')">Remove</button></div>`).join('')
+      : `<div class="empty">${collection.length ? 'No matches for "' + esc(f) + '".' : 'Nothing saved yet.'}</div>`;
+  }
+
+  function populateTypeSelects() {
+    const opts = Object.keys(typeLabels).map(k => `<option value="${k}">${esc(typeLabels[k])}</option>`).join('');
+    const gt = document.getElementById('gameType'); if (gt) gt.innerHTML = opts;
+    const lb = document.getElementById('lbFilter'); if (lb) { const cur = lb.value; lb.innerHTML = '<option value="ALL">All Types</option>' + opts; if (cur) lb.value = cur; }
+  }
+  function renderTypeLabelInputs() { const box = document.getElementById('typeLabels'); if (!box) return; box.innerHTML = Object.keys(typeLabels).map(k => `<div class="row" style="margin-bottom:8px;"><span class="typebadge" style="flex:none;">${k}</span><input id="lbl-${k}" value="${esc(typeLabels[k])}"></div>`).join(''); }
+  function saveTypeLabels() { Object.keys(typeLabels).forEach(k => { const v = document.getElementById('lbl-' + k).value.trim(); if (v) typeLabels[k] = v; }); save(); populateTypeSelects(); refreshStats(); renderSession(); const s = document.getElementById('labelSaved'); s.textContent = 'Saved ✓'; setTimeout(() => s.textContent = '', 1500); }
+  const typeName = t => typeLabels[t] || ('Type ' + t);
+
+  // ---------- Roster ----------
+  function rosterAdd() { const inp = document.getElementById('rosterNew'); const name = inp.value.trim(); if (!name) return; players.push({ id: pid(), name }); inp.value=''; save(); renderRosterList(); renderRosterPick(); }
+  function rosterRename(id) { const p = playerById(id); if (!p) return; const nv = prompt('Rename player:', p.name); if (nv === null) return; const name = nv.trim(); if (!name) return; p.name = name; save(); renderAll(); }
+  function rosterDelete(id) { if (games.some(g => g.standings.includes(id))) { alert('This player has game history and can\'t be deleted. Rename instead.'); return; } const p = playerById(id); if (!confirm('Remove "' + (p ? p.name : '') + '"?')) return; players = players.filter(x => x.id !== id); save(); renderRosterList(); renderRosterPick(); }
+  function renderRosterList() {
+    const box = document.getElementById('rosterList'); if (!box) return;
+    box.innerHTML = players.length ? players.map(p => { const count = games.filter(g => g.standings.includes(p.id)).length;
+      return `<div class="player-row"><div class="item-name">${esc(p.name)} <span class="item-meta">· ${count} game${count === 1 ? '' : 's'}</span><div class="pid">${p.id}</div></div><button class="ghost small" onclick="rosterRename('${p.id}')">Rename</button><button class="danger small" onclick="rosterDelete('${p.id}')">Remove</button></div>`;
+    }).join('') : '<div class="empty">No players yet.</div>';
+  }
+  function renderRosterPick() { const box = document.getElementById('rosterPick'); if (!box) return; const inLobby = new Set(lobby.map(p => p.pid)); const avail = players.filter(p => !inLobby.has(p.id)); box.innerHTML = avail.length ? avail.map(p => `<span class="chip" onclick="addPlayerFromRoster('${p.id}')">+ ${esc(p.name)}</span>`).join('') : (players.length ? '<span class="item-meta">All roster players are in this game.</span>' : ''); }
+
+  // ---------- Lobby ----------
+  function addPlayerByName() {
+    const inp = document.getElementById('newPlayer'); const name = inp.value.trim(); if (!name) return;
+    const existing = players.find(p => p.name.toLowerCase() === name.toLowerCase());
+    if (existing && !confirm(`A player named "${existing.name}" already exists. Add that existing player? (Cancel to create a separate new player with the same name.)`)) { const np = { id: pid(), name }; players.push(np); addLobby(np.id); }
+    else addLobby(ensurePlayerByName(name));
+    inp.value=''; save(); renderRosterList();
+  }
+  function addPlayerFromRoster(id) { addLobby(id); }
+  function addLobby(id) { if (lobby.some(p => p.pid === id)) return; lobby.push({ pid: id, docs: new Set() }); renderLobby(); renderRosterPick(); }
+  function removePlayer(i) { lobby.splice(i, 1); renderLobby(); renderRosterPick(); }
+  function movePlayer(i, dir) { const j = i + dir; if (j < 0 || j >= lobby.length) return; [lobby[i], lobby[j]] = [lobby[j], lobby[i]]; renderLobby(); }
+  function renderLobby() {
+    const box = document.getElementById('lobbyList');
+    box.innerHTML = lobby.length ? lobby.map((p, i) => `<div class="player-setup"><div class="phead"><div class="place-tag">${i + 1}</div><div class="item-name">${esc(nameOf(p.pid))} <span class="doc-count">· ${p.docs.size} doc${p.docs.size === 1 ? '' : 's'}</span></div><div class="ord-btns"><button onclick="movePlayer(${i},-1)" ${i === 0 ? 'disabled style="opacity:.3"' : ''}>▲</button><button onclick="movePlayer(${i},1)" ${i === lobby.length - 1 ? 'disabled style="opacity:.3"' : ''}>▼</button></div></div><div class="row"><button class="ghost small" onclick="openDocModal(${i})">Assign Documents</button><button class="danger small" onclick="removePlayer(${i})">Remove</button></div></div>`).join('') : '<div class="empty">No players added yet.</div>';
+  }
+  function openDocModal(i) { if (!collection.length) { alert('Add documents to your collection first.'); return; } modalPlayerIdx = i; document.getElementById('docModalTitle').textContent = 'Documents for ' + nameOf(lobby[i].pid); document.getElementById('docModalSearch').value = ''; document.getElementById('docModal').style.display = 'block'; renderDocModal(); }
+  function closeDocModal() { document.getElementById('docModal').style.display = 'none'; modalPlayerIdx = null; renderLobby(); }
+  function renderDocModal() { if (modalPlayerIdx === null) return; const sel = lobby[modalPlayerIdx].docs; const f = (document.getElementById('docModalSearch').value || '').trim().toLowerCase(); const list = f ? collection.filter(c => c.name.toLowerCase().includes(f)) : collection; document.getElementById('docModalChips').innerHTML = list.length ? list.map(it => `<span class="chip ${sel.has(it.id) ? 'sel' : ''}" onclick="toggleModalDoc('${it.id}')">${esc(it.name)}</span>`).join('') : '<span class="empty">No matches.</span>'; }
+  function toggleModalDoc(id) { const sel = lobby[modalPlayerIdx].docs; sel.has(id) ? sel.delete(id) : sel.add(id); renderDocModal(); }
+
+  // ---------- Active game ----------
+  function startGame() {
+    if (lobby.length < 2) { alert('Add at least 2 players.'); return; }
+    const playerDocs = {}; lobby.forEach(p => playerDocs[p.pid] = collection.filter(c => p.docs.has(c.id)).map(c => c.name));
+    active = { type: document.getElementById('gameType').value, alive: lobby.map(p => p.pid), eliminated: [], playerDocs }; saveActive();
+    document.getElementById('setupCard').style.display = 'none'; document.getElementById('gameCard').style.display = 'block'; renderActiveGame();
+  }
+  function eliminate(id) { active.eliminated.push(id); active.alive = active.alive.filter(p => p !== id); if (active.alive.length === 1) finishGame(); else { saveActive(); renderActiveGame(); } }
+  function undoElimination() { if (!active || !active.eliminated.length) return; active.alive.push(active.eliminated.pop()); saveActive(); renderActiveGame(); }
+  function finishGame() {
+    const winner = active.alive[0]; const standings = [winner, ...active.eliminated.slice().reverse()];
+    games.push({ id: uid(), type: active.type, ts: Date.now(), standings, playerDocs: active.playerDocs });
+    active = null; lobby = []; saveActive();
+    document.getElementById('setupCard').style.display = 'block'; document.getElementById('gameCard').style.display = 'none'; save(); renderAll();
+  }
+  function cancelGame() { if (!confirm('Cancel this game? Nothing will be recorded.')) return; active = null; saveActive(); document.getElementById('setupCard').style.display = 'block'; document.getElementById('gameCard').style.display = 'none'; }
+  function renderActiveGame() {
+    const box = document.getElementById('activeList'); const total = active.alive.length + active.eliminated.length;
+    document.getElementById('gameHint').textContent = `${typeName(active.type)} · ${active.alive.length} still in · tap a player to eliminate them.`;
+    document.getElementById('undoBtn').style.display = active.eliminated.length ? 'inline-block' : 'none';
+    let html = '';
+    if (active.eliminated.length) html += active.eliminated.map((id, idx) => { const place = total - idx; const docs = active.playerDocs[id] || []; return `<div class="player-row eliminated"><div class="place-tag">${place}</div><div class="item-name">${esc(nameOf(id))}${docs.length ? `<div class="item-meta">${esc(docs.join(', '))}</div>` : ''}</div><span class="item-meta">out</span></div>`; }).join('');
+    html += active.alive.map(id => { const docs = active.playerDocs[id] || []; return `<div class="player-row"><div class="place-tag active">in</div><div class="item-name">${esc(nameOf(id))}${docs.length ? `<div class="item-meta">${esc(docs.join(', '))}</div>` : ''}</div><button class="danger small" onclick="eliminate('${id}')">Eliminate</button></div>`; }).join('');
+    box.innerHTML = html;
+  }
+
+  // ---------- History ----------
+  function renderSession() {
+    document.getElementById('statGames').textContent = games.length;
+    document.getElementById('statPlayers').textContent = players.length;
+    let fieldSum = 0; games.forEach(g => fieldSum += g.standings.length);
+    document.getElementById('statAvg').textContent = games.length ? (fieldSum / games.length).toFixed(1) : '—';
+    renderLobby();
+    const log = document.getElementById('matchLog');
+    log.innerHTML = games.length ? [...games].sort((a,b)=>b.ts-a.ts).map(g => {
+      const places = g.standings.map((id, i) => { const docs = (g.playerDocs && g.playerDocs[id]) || []; return `<span class="badge ${i === 0 ? 'w' : ''}" title="${esc(docs.join(', '))}">${ordinal(i + 1)} ${esc(nameOf(id))}${docs.length ? ' (' + docs.length + ')' : ''}</span>`; }).join(' ');
+      return `<div class="log-line"><div class="row" style="justify-content:space-between;margin-bottom:6px;"><div>🏆 <strong class="gold">${esc(nameOf(g.standings[0]))}</strong><span class="item-meta"> · <span class="typebadge">${esc(typeName(g.type || 'A'))}</span> · ${g.standings.length} players · ${new Date(g.ts).toLocaleDateString()}</span></div><div class="row" style="gap:6px;"><button class="ghost tiny" onclick="openEditModal('${g.id}')">Edit</button><button class="danger tiny" onclick="deleteGame('${g.id}')">Delete</button></div></div><div class="chip-row" style="margin-top:0;">${places}</div></div>`;
+    }).join('') : '<div class="empty">No games recorded yet.</div>';
+  }
+  function deleteGame(id) { if (!confirm('Delete this game?')) return; games = games.filter(g => g.id !== id); save(); renderAll(); }
+  function resetSession() { if (!confirm('Clear ALL game history? (Collection & roster stay.)')) return; games = []; save(); renderAll(); }
+
+  function openEditModal(id) { const g = games.find(x => x.id === id); if (!g) return; editingGameId = id; editOrder = [...g.standings]; document.getElementById('editModal').style.display = 'block'; renderEditModal(); }
+  function closeEditModal() { document.getElementById('editModal').style.display = 'none'; editingGameId = null; }
+  function moveEdit(i, dir) { const j = i + dir; if (j < 0 || j >= editOrder.length) return; [editOrder[i], editOrder[j]] = [editOrder[j], editOrder[i]]; renderEditModal(); }
+  function renderEditModal() { document.getElementById('editStandings').innerHTML = editOrder.map((id, i) => `<div class="player-row"><div class="place-tag ${i === 0 ? 'active' : ''}">${i + 1}</div><div class="item-name">${esc(nameOf(id))}</div><div class="ord-btns"><button onclick="moveEdit(${i},-1)" ${i === 0 ? 'disabled style="opacity:.3"' : ''}>▲</button><button onclick="moveEdit(${i},1)" ${i === editOrder.length - 1 ? 'disabled style="opacity:.3"' : ''}>▼</button></div></div>`).join(''); }
+  function saveEdit() { const g = games.find(x => x.id === editingGameId); if (!g) return; g.standings = [...editOrder]; save(); closeEditModal(); renderAll(); }
+
+  // ============================================================
+  //  STATS + CHARTS
+  // ============================================================
+  function clearDates() { document.getElementById('dateFrom').value = ''; document.getElementById('dateTo').value = ''; refreshStats(); }
+  function scopedGames() { const fromV = document.getElementById('dateFrom').value, toV = document.getElementById('dateTo').value; const from = fromV ? new Date(fromV + 'T00:00:00').getTime() : -Infinity; const to = toV ? new Date(toV + 'T23:59:59').getTime() : Infinity; return games.filter(g => g.ts >= from && g.ts <= to); }
+  function refreshStats() {
+    const gs = scopedGames(); const fromV = document.getElementById('dateFrom').value, toV = document.getElementById('dateTo').value;
+    document.getElementById('dateScope').textContent = `${gs.length} game${gs.length === 1 ? '' : 's'} in range` + (fromV || toV ? ` (${fromV || '…'} → ${toV || '…'})` : ' (all time)');
+    renderTypeSummary(gs); renderDocStats(gs); renderLeaderboard(); renderWinsChart(gs); renderTypeChart(gs);
+  }
+
+  const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim() || '#4da3ff';
+  const palette = () => [cssVar('--accent'), cssVar('--win'), cssVar('--gold'), cssVar('--loss'), '#a78bfa', '#22d3ee', '#fb923c', '#f472b6'];
+
+  function renderTypeSummary(gs) {
+    const box = document.getElementById('typeSummary'); if (!box) return;
+    if (!gs.length) { box.innerHTML = '<div class="empty">No games in range.</div>'; return; }
+    const byType = {}; gs.forEach(g => { const t = g.type || 'A'; (byType[t] = byType[t] || []).push(g); });
+    box.innerHTML = `<table class="lb"><thead><tr><th>Type</th><th class="num">Games</th><th>Top Player</th><th class="num">Wins</th></tr></thead><tbody>${Object.keys(byType).sort().map(t => { const g2 = byType[t]; const wins = {}; g2.forEach(g => { const w = g.standings[0]; wins[w] = (wins[w] || 0) + 1; }); const top = Object.entries(wins).sort((a, b) => b[1] - a[1])[0]; return `<tr><td><strong>${esc(typeName(t))}</strong></td><td class="num">${g2.length}</td><td>${top ? '🏆 ' + esc(nameOf(top[0])) : '—'}</td><td class="num win">${top ? top[1] : 0}</td></tr>`; }).join('')}</tbody></table>`;
+  }
+
+  // Document performance with Wilson lower-bound confidence on lift
+  function renderDocStats(gs) {
+    const box = document.getElementById('docStats'); if (!box) return;
+    const pStats = {}; gs.forEach(g => { const w = g.standings[0]; g.standings.forEach(id => { pStats[id] = pStats[id] || { games: 0, wins: 0 }; pStats[id].games++; if (id === w) pStats[id].wins++; }); });
+    const baseline = id => pStats[id] && pStats[id].games ? pStats[id].wins / pStats[id].games : 0;
+    const stats = {};
+    gs.forEach(g => { if (!g.playerDocs) return; const winner = g.standings[0]; Object.keys(g.playerDocs).forEach(id => { const won = id === winner ? 1 : 0; const lift = won - baseline(id); (g.playerDocs[id] || []).forEach(d => { stats[d] = stats[d] || { name: d, used: 0, wins: 0, liftSum: 0 }; stats[d].used++; stats[d].wins += won; stats[d].liftSum += lift; }); }); });
+    const rows = Object.values(stats).map(s => ({ ...s, rate: s.used ? s.wins / s.used : 0, lift: s.used ? s.liftSum / s.used : 0 })).sort((a, b) => b.lift - a.lift || b.used - a.used);
+    if (!rows.length) { box.innerHTML = '<div class="empty">No documents assigned to players in this range.</div>'; return; }
+    const conf = used => used >= 8 ? 'high' : used >= 4 ? 'med' : 'low';
+    box.innerHTML = `<table class="lb"><thead><tr><th>Document</th><th class="num">Used</th><th class="num">Win %</th><th class="num">Lift</th><th>Conf.</th></tr></thead><tbody>${rows.map(r => { const pct = Math.round(r.lift * 100); const cls = pct > 0 ? 'win' : pct < 0 ? 'loss' : ''; const sign = pct > 0 ? '+' : ''; const c = conf(r.used); return `<tr class="${c === 'low' ? 'lowconf' : ''}"><td>${esc(r.name)}</td><td class="num">${r.used}</td><td class="num">${Math.round(r.rate * 100)}%</td><td class="num ${cls}">${sign}${pct} pts</td><td><span class="conf ${c}"></span> <span class="item-meta">${c}</span></td></tr>`; }).join('')}</tbody></table>
+      <div class="legend"><span><span class="legdot" style="background:var(--win)"></span>High ≥ 8 uses</span><span><span class="legdot" style="background:var(--gold)"></span>Medium 4–7</span><span><span class="legdot" style="background:var(--faint)"></span>Low &lt; 4 (dimmed — treat as noise)</span></div>
+      <div class="hint"><strong>Lift</strong> = how much better users did with the document vs. their own overall win rate. Low-confidence rows are dimmed because a few games can swing the number wildly.</div>`;
+  }
+
+  function renderLeaderboard() {
+    const filter = document.getElementById('lbFilter')?.value || 'ALL'; let gs = scopedGames(); if (filter !== 'ALL') gs = gs.filter(g => (g.type || 'A') === filter);
+    const stats = {}; gs.forEach(g => g.standings.forEach((id, i) => { if (!stats[id]) stats[id] = { id, games: 0, wins: 0, placeSum: 0 }; stats[id].games++; if (i === 0) stats[id].wins++; stats[id].placeSum += (i + 1); }));
+    const rows = Object.values(stats).map(s => ({ ...s, winRate: s.games ? s.wins / s.games : 0, avgFinish: s.games ? s.placeSum / s.games : 0 })).sort((a, b) => b.winRate - a.winRate || a.avgFinish - b.avgFinish);
+    const box = document.getElementById('leaderboard');
+    if (!rows.length) { box.innerHTML = `<div class="empty">No games in range${filter === 'ALL' ? '' : ' for ' + typeName(filter)}.</div>`; renderLeaderChart([]); return; }
+    box.innerHTML = `<div class="item-meta" style="margin-bottom:8px;">${gs.length} game${gs.length === 1 ? '' : 's'}${filter === 'ALL' ? '' : ' · ' + typeName(filter)}</div><table class="lb"><thead><tr><th>#</th><th>Player</th><th class="num">Games</th><th class="num">Wins</th><th class="num">Win %</th><th class="num">Avg Finish</th></tr></thead><tbody>${rows.map((r, i) => `<tr><td>${i + 1}</td><td>${i === 0 ? '🏆 ' : ''}${esc(nameOf(r.id))}</td><td class="num">${r.games}</td><td class="num win">${r.wins}</td><td class="num">${Math.round(r.winRate * 100)}%</td><td class="num">${r.avgFinish.toFixed(2)}</td></tr>`).join('')}</tbody></table>`;
+    renderLeaderChart(rows.slice(0, 8));
+  }
+
+  // ----- Charts (hand-rolled SVG/HTML, no libraries) -----
+  function renderWinsChart(gs) {
+    const box = document.getElementById('chartWins');
+    if (gs.length < 2) { box.innerHTML = '<div class="empty">Need at least 2 games to chart a trend.</div>'; return; }
+    // cumulative wins per player over time, top 5 by total wins
+    const sorted = [...gs].sort((a, b) => a.ts - b.ts);
+    const totals = {}; sorted.forEach(g => { const w = g.standings[0]; totals[w] = (totals[w] || 0) + 1; });
+    const top = Object.entries(totals).sort((a, b) => b[1] - a[1]).slice(0, 5).map(e => e[0]);
+    const series = {}; top.forEach(id => series[id] = []); const run = {}; top.forEach(id => run[id] = 0);
+    sorted.forEach((g, i) => { const w = g.standings[0]; if (run[w] !== undefined) run[w]++; top.forEach(id => series[id].push(run[id])); });
+    const n = sorted.length, maxY = Math.max(1, ...top.map(id => run[id]));
+    const W = 600, H = 120, padL = 24, padB = 16, padT = 8, padR = 8;
+    const x = i => padL + (i / (n - 1)) * (W - padL - padR);
+    const y = v => padT + (1 - v / maxY) * (H - padT - padB);
+    const cols = palette();
+    const lines = top.map((id, k) => { const pts = series[id].map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' '); return `<polyline fill="none" stroke="${cols[k % cols.length]}" stroke-width="2" points="${pts}"/>`; }).join('');
+    const yticks = [0, Math.ceil(maxY / 2), maxY].map(v => `<text x="0" y="${(y(v)+3).toFixed(1)}" font-size="9" fill="${cssVar('--muted')}">${v}</text><line x1="${padL}" x2="${W-padR}" y1="${y(v)}" y2="${y(v)}" stroke="${cssVar('--border')}" stroke-width="1"/>`).join('');
+    box.innerHTML = `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${yticks}${lines}</svg><div class="legend">${top.map((id, k) => `<span><span class="legdot" style="background:${cols[k % cols.length]}"></span>${esc(nameOf(id))} (${run[id]})</span>`).join('')}</div>`;
+  }
+
+  function renderTypeChart(gs) {
+    const box = document.getElementById('chartTypes'); if (!gs.length) { box.innerHTML = ''; return; }
+    const byType = {}; gs.forEach(g => { const t = g.type || 'A'; byType[t] = (byType[t] || 0) + 1; });
+    const entries = Object.keys(byType).sort().map(t => [typeName(t), byType[t]]); const max = Math.max(...entries.map(e => e[1]));
+    box.innerHTML = entries.map(([lbl, v]) => `<div class="barwrap"><span class="barlbl">${esc(lbl)}</span><div class="bartrack"><div class="barfill" style="width:${(v / max * 100).toFixed(1)}%"></div></div><span class="barval">${v}</span></div>`).join('');
+  }
+
+  function renderLeaderChart(rows) {
+    const box = document.getElementById('chartLeader'); if (!rows.length) { box.innerHTML = ''; return; }
+    const max = Math.max(...rows.map(r => r.winRate)) || 1;
+    box.innerHTML = rows.map(r => `<div class="barwrap"><span class="barlbl">${esc(nameOf(r.id))}</span><div class="bartrack"><div class="barfill" style="width:${(r.winRate / max * 100).toFixed(1)}%;background:${cssVar('--win')}"></div></div><span class="barval">${Math.round(r.winRate * 100)}%</span></div>`).join('');
+  }
+
+  // ---------- CSV / JSON ----------
+  function exportCSV() {
+    const gs = scopedGames(); if (!gs.length) { alert('No games in range to export.'); return; }
+    const rows = [['Date', 'Game Type', 'Type Label', 'Players', 'Place', 'Player', 'Player ID', 'Documents Used']];
+    gs.forEach(g => { const date = new Date(g.ts).toISOString().slice(0, 10); g.standings.forEach((id, i) => { const docs = ((g.playerDocs && g.playerDocs[id]) || []).join('; '); rows.push([date, g.type || 'A', typeName(g.type || 'A'), g.standings.length, i + 1, nameOf(id), id, docs]); }); });
+    const csv = rows.map(r => r.map(c => { const s = String(c); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }).join(',')).join('\n');
+    downloadBlob(csv, 'text/csv;charset=utf-8;', 'game-history-' + new Date().toISOString().slice(0, 10) + '.csv');
+  }
+  function exportJSON() { downloadBlob(JSON.stringify({ version: 4, exported: new Date().toISOString(), ...snapshot() }, null, 2), 'application/json', 'tracker-backup-' + new Date().toISOString().slice(0, 10) + '.json'); }
+  function importJSON(ev) {
+    const file = ev.target.files[0]; const status = document.getElementById('backupStatus'); if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => { try { const d = JSON.parse(e.target.result); if (!d.collection && !d.games && !d.players) throw new Error('Unrecognized file'); if (!confirm('This will REPLACE your current data. Continue?')) return; applyState(d, false); applyTheme(); save(); renderAll(); status.innerHTML = `<span class="win">Restored ${collection.length} documents, ${games.length} games, ${players.length} players.</span>`; } catch (err) { status.innerHTML = '<span class="loss">Import failed: not a valid backup file.</span>'; } };
+    reader.readAsText(file); ev.target.value = '';
+  }
+  function downloadBlob(content, type, filename) { const blob = new Blob([content], { type }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); }
+
+  function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
+  function ordinal(n) { const s=['th','st','nd','rd'], v=n%100; return n + (s[(v-20)%10]||s[v]||s[0]); }
+
+  document.querySelectorAll('.tab').forEach(t => t.onclick = () => { document.querySelectorAll('.tab').forEach(x => x.classList.remove('active')); document.querySelectorAll('.panel').forEach(x => x.classList.remove('active')); t.classList.add('active'); document.getElementById(t.dataset.tab).classList.add('active'); if (t.dataset.tab === 'stats') refreshStats(); });
+  window.addEventListener('beforeunload', e => { if (active) { e.preventDefault(); e.returnValue = ''; } });
+
+  load();
+</script>
